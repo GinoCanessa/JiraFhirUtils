@@ -5,12 +5,12 @@
   "type": "module",
   "workspaces": ["packages/*"],
   "scripts": {
-    "download-issues": "bun run @jira-fhir-utils/fhir-jira-db download-issues",
-    "extract-archives": "bun run @jira-fhir-utils/fhir-jira-db extract-archives",
-    "load-initial": "bun run @jira-fhir-utils/fhir-jira-db load-initial",
-    "load-updates": "bun run @jira-fhir-utils/fhir-jira-db load-updates",
-    "create-fts": "bun run @jira-fhir-utils/fhir-jira-db create-fts",
-    "create-tfidf": "bun run @jira-fhir-utils/fhir-jira-db create-tfidf"
+    "download-issues": "bun run packages/fhir-jira-db/download-issues.ts",
+    "extract-archives": "bun run packages/fhir-jira-db/extract-archives.ts",
+    "load-initial": "bun run packages/fhir-jira-db/load-initial.ts",
+    "load-updates": "bun run packages/fhir-jira-db/load-updates.ts",
+    "create-fts": "bun run packages/fhir-jira-db/create-fts.ts",
+    "create-tfidf": "bun run packages/fhir-jira-db/create-tfidf.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.5.0",

@@ -18,8 +18,7 @@
     "load-initial": "bun run load-initial.ts",
     "load-updates": "bun run load-updates.ts",
     "create-fts": "bun run create-fts.ts",
-    "create-tfidf": "bun run create-tfidf.ts",
-    "test-tfidf": "bun run test-tfidf.ts"
+    "create-tfidf": "bun run create-tfidf.ts"
   },
   "dependencies": {
     "@jira-fhir-utils/database-utils": "workspace:*",
