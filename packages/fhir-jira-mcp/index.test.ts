@@ -4,51 +4,108 @@ import type {
   CallToolResult, 
   ListToolsResult,
 } from '@modelcontextprotocol/sdk/types.js';
+import type { IssueRecord, CommentRecord, CustomFieldRecord } from '@jira-fhir-utils/fhir-jira-db/types.js';
 
 // Test data fixtures
 const mockIssueRecord = {
-  issue_key: 'FHIR-123',
+  key: 'FHIR-123',
+  id: '12345',
   project_key: 'FHIR',
-  work_group: 'Terminology',
+  workGroup: 'Terminology',
   title: 'Test Issue Title',
   description: 'Test issue description',
   summary: 'Test summary',
-  resolution_description: 'Test resolution',
+  resolutionDescription: 'Test resolution',
   resolution: 'Fixed',
   status: 'Resolved',
   assignee: 'john.doe',
   updated_at: '2023-12-01T10:00:00Z',
-  issue_int: 123,
-  related_url: 'https://example.com/spec.html',
-  related_artifacts: 'artifact1, artifact2',
-  related_pages: 'page1, page2',
+  relatedURL: 'https://example.com/spec.html',
+  relatedArtifacts: 'artifact1, artifact2',
+  relatedPages: 'page1, page2',
+  link: undefined,
+  project_id: undefined,
+  type: undefined,
+  type_id: undefined,
+  priority: undefined,
+  priority_id: undefined,
+  status_id: undefined,
+  status_category_id: undefined,
+  status_category_key: undefined,
+  status_category_color: undefined,
+  resolution_id: undefined,
+  reporter: undefined,
+  created_at: null,
+  resolved_at: null,
+  watches: 0,
+  specification: null,
+  appliedForVersion: null,
+  changeCategory: null,
+  changeImpact: null,
+  duplicateIssue: null,
+  grouping: null,
+  raisedInVersion: null,
+  relatedIssues: null,
+  relatedSections: null,
+  voteDate: null,
+  vote: null
 };
 
 const mockIssues = [
   mockIssueRecord,
   {
-    issue_key: 'FHIR-124',
+    key: 'FHIR-124',
+    id: '12346',
     project_key: 'FHIR',  
-    work_group: 'Infrastructure',
+    workGroup: 'Infrastructure',
     title: 'Another Test Issue',
     description: 'Another description',
     summary: 'Another summary',
-    resolution_description: 'Another resolution',
+    resolutionDescription: 'Another resolution',
     resolution: 'Wont Fix',
     status: 'Closed',
     assignee: 'jane.smith',
     updated_at: '2023-12-02T11:00:00Z',
-    issue_int: 124,
+    link: undefined,
+    project_id: undefined,
+    type: undefined,
+    type_id: undefined,
+    priority: undefined,
+    priority_id: undefined,
+    status_id: undefined,
+    status_category_id: undefined,
+    status_category_key: undefined,
+    status_category_color: undefined,
+    resolution_id: undefined,
+    reporter: undefined,
+    created_at: null,
+    resolved_at: null,
+    watches: 0,
+    specification: null,
+    appliedForVersion: null,
+    changeCategory: null,
+    changeImpact: null,
+    duplicateIssue: null,
+    grouping: null,
+    raisedInVersion: null,
+    relatedIssues: null,
+    relatedArtifacts: null,
+    relatedPages: null,
+    relatedSections: null,
+    relatedURL: null,
+    voteDate: null,
+    vote: null
   },
 ];
 
 const mockCustomFields = [
-  { field_name: 'Related Issues', field_value: 'FHIR-125, FHIR-126' },
-  { field_name: 'Priority', field_value: 'High' },
+  { issue_key: 'FHIR-123', field_id: 'customfield_10001', field_key: 'relatedIssues', field_name: 'Related Issues', field_value: 'FHIR-125, FHIR-126' },
+  { issue_key: 'FHIR-123', field_id: 'customfield_10002', field_key: 'priority', field_name: 'Priority', field_value: 'High' },
 ];
 
 const mockComments = [
   {
+    comment_id: '1001',
     issue_key: 'FHIR-123',
     created_at: '2023-12-01T12:00:00Z',
     author: 'john.doe',
@@ -258,7 +315,7 @@ describe('JiraIssuesMCPServer', () => {
         const result = await server.getIssueDetails({ issue_key: 'FHIR-123' });
         
         const content = JSON.parse(result.content[0].text);
-        expect(content.issue_key).toBe('FHIR-123');
+        expect(content.key).toBe('FHIR-123');
         expect(content.custom_fields).toEqual({
           'Related Issues': 'FHIR-125, FHIR-126',
           'Priority': 'High'
@@ -307,7 +364,7 @@ describe('JiraIssuesMCPServer', () => {
         
         mockStatement.all
           .mockReturnValueOnce(mockKeywords)  // keywords
-          .mockReturnValueOnce([{ issue_key: 'FHIR-127' }]); // related issues
+          .mockReturnValueOnce([{ key: 'FHIR-127' }]); // related issues
         
         const result = await server.listRelatedIssues({ issue_key: 'FHIR-123' });
         

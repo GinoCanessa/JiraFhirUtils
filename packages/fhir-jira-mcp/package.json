@@ -15,6 +15,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "@jira-fhir-utils/database-utils": "workspace:*",
+    "@jira-fhir-utils/fhir-jira-db": "workspace:*",
     "commander": "^14.0.0"
   },
   "keywords": ["jira", "fhir", "mcp", "server"],

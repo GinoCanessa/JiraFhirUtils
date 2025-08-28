@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import { promises as fsPromises } from "fs";
 import { getDatabasePath, setupDatabaseCliArgs } from "@jira-fhir-utils/database-utils";
+import type { IssueRecord, CommentRecord, CustomFieldRecord } from './types.js';
 
 // --- Configuration ---
 const INITIAL_SUBDIRECTORY = "bulk"; // The subdirectory containing the initial XML files
@@ -80,65 +81,6 @@ interface XmlData {
   };
 }
 
-interface IssueRecord {
-  key: string;
-  id: string | undefined;
-  title: string | undefined;
-  link: string | undefined;
-  project_id: string | undefined;
-  project_key: string | undefined;
-  description: string | undefined;
-  summary: string | undefined;
-  type: string | undefined;
-  type_id: string | undefined;
-  priority: string | undefined;
-  priority_id: string | undefined;
-  status: string | undefined;
-  status_id: string | undefined;
-  status_category_id: string | undefined;
-  status_category_key: string | undefined;
-  status_category_color: string | undefined;
-  resolution: string | undefined;
-  resolution_id: string | undefined;
-  assignee: string | undefined;
-  reporter: string | undefined;
-  created_at: string | null;
-  updated_at: string | null;
-  resolved_at: string | null;
-  watches: number;
-  specification: string | null;
-  appliedForVersion: string | null;
-  changeCategory: string | null;
-  changeImpact: string | null;
-  duplicateIssue: string | null;
-  grouping: string | null;
-  raisedInVersion: string | null;
-  relatedIssues: string | null;
-  relatedArtifacts: string | null;
-  relatedPages: string | null;
-  relatedSections: string | null;
-  relatedURL: string | null;
-  resolutionDescription: string | null;
-  voteDate: string | null;
-  vote: string | null;
-  workGroup: string | null;
-}
-
-interface CustomFieldRecord {
-  issue_key: string;
-  field_id: string | undefined;
-  field_key: string | undefined;
-  field_name: string | undefined;
-  field_value: string | null;
-}
-
-interface CommentRecord {
-  comment_id: string | undefined;
-  issue_key: string;
-  author: string | undefined;
-  created_at: string | null;
-  body: string | undefined;
-}
 
 interface CommandOptions {
   initialDir?: string;

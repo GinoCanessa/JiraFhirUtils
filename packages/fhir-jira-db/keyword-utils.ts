@@ -1,13 +1,6 @@
 import { Database } from "bun:sqlite";
 import { getDatabasePath } from "@jira-fhir-utils/database-utils";
-
-// Type definitions for database records
-interface KeywordRecord {
-  keyword: string;
-  tfidf_score: number;
-  tf_score: number;
-  idf_score: number;
-}
+import type { KeywordRecord } from './types.js';
 
 interface KeywordSearchResult {
   issue_key: string;

@@ -10,6 +10,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { program } from 'commander';
 import { getDatabasePath, setupDatabaseCliArgs } from '@jira-fhir-utils/database-utils';
+import type { IssueRecord, CommentRecord, CustomFieldRecord } from '@jira-fhir-utils/fhir-jira-db/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,24 +28,6 @@ interface DatabaseOptions {
   [key: string]: any;
 }
 
-interface IssueRecord {
-  issue_key: string;
-  project_key: string;
-  work_group: string;
-  title: string;
-  description: string;
-  summary: string;
-  resolution_description: string;
-  resolution: string;
-  status: string;
-  assignee: string;
-  updated_at: string;
-  issue_int: number;
-  related_url?: string;
-  related_artifacts?: string;
-  related_pages?: string;
-  [key: string]: any;
-}
 
 interface ListIssuesArgs {
   project_key?: string;
@@ -75,16 +58,7 @@ interface IssueCommentsArgs {
   issue_key: string;
 }
 
-interface CustomFieldRecord {
-  field_name: string;
-  field_value: string;
-}
 
-interface CommentRecord {
-  issue_key: string;
-  created_at: string;
-  [key: string]: any;
-}
 
 interface KeywordRecord {
   keyword: string;
@@ -280,7 +254,7 @@ class JiraIssuesMCPServer {
     }
     
     if (work_group) {
-      searchConditions.push('work_group = $work_group');
+      searchConditions.push('workGroup = $work_group');
       queryParams.work_group = work_group;
     }
     
@@ -339,7 +313,7 @@ class JiraIssuesMCPServer {
     const { issue_key, limit = 10 } = args;
     
     // retrieve the original issue so we can use it for context
-    const sourceIssueQuery = 'SELECT * FROM issues_fts WHERE issue_key = $issue_key';
+    const sourceIssueQuery = 'SELECT * FROM issues_fts WHERE key = $issue_key';
     let sourceIssue: IssueRecord | null;
     try {
       const sourceIssueStatement = this.db.prepare(sourceIssueQuery);
@@ -408,11 +382,11 @@ class JiraIssuesMCPServer {
     }
 
     // Build a regular SQL query using the issues_fts table for consistency
-    let baseQuery = 'SELECT issue_key FROM issues_fts WHERE ';
+    let baseQuery = 'SELECT key FROM issues_fts WHERE ';
     const conditions: string[] = [];
     const queryParams: { [key: string]: any } = {
       project_key: sourceIssue.project_key,
-      work_group: sourceIssue.work_group,
+      work_group: sourceIssue.workGroup,
       issue_key: issue_key,
       limit: limit
     };
@@ -420,11 +394,11 @@ class JiraIssuesMCPServer {
 
     // Match project_key and work_group
     conditions.push('project_key = $project_key');
-    conditions.push('work_group = $work_group');
-    conditions.push('issue_key != $issue_key');
+    conditions.push('workGroup = $work_group');
+    conditions.push('key != $issue_key');
 
-    // Add related_url, related_artifacts, related_pages if present
-    (['related_url', 'related_artifacts', 'related_pages'] as const).forEach(field => {
+    // Add relatedURL, relatedArtifacts, relatedPages if present
+    (['relatedURL', 'relatedArtifacts', 'relatedPages'] as const).forEach(field => {
       if (sourceIssue![field] && sourceIssue![field] !== '') {
         // if the string value has a comma character, split into multiple terms
         if (typeof sourceIssue![field] === 'string' && sourceIssue![field]!.includes(',')) {
@@ -433,8 +407,8 @@ class JiraIssuesMCPServer {
           terms.forEach((term, termIndex) => {
             let searchTerm = term;
             
-            // For related_url, extract filename from URL
-            if (field === 'related_url') {
+            // For relatedURL, extract filename from URL
+            if (field === 'relatedURL') {
               try {
                 const url = new URL(term);
                 let filename = url.pathname.split('/').pop();
@@ -459,8 +433,8 @@ class JiraIssuesMCPServer {
         } else {
           let searchTerm = sourceIssue![field]!;
           
-          // For related_url, extract filename from URL
-          if (field === 'related_url') {
+          // For relatedURL, extract filename from URL
+          if (field === 'relatedURL') {
             try {
               const url = new URL(sourceIssue![field]!);
               let filename = url.pathname.split('/').pop();
@@ -486,13 +460,13 @@ class JiraIssuesMCPServer {
     let keywordMatches: string[] = [];
     if (keywords && keywords.trim()) {
       try {
-        const ftsQuery = 'SELECT issue_key FROM issues_fts WHERE ' + 
+        const ftsQuery = 'SELECT key FROM issues_fts WHERE ' + 
           _defaultSearchFields.map(field => `${field} MATCH ?`).join(' OR ') +
           ' ORDER BY rank DESC LIMIT ?';
         const ftsStmt = this.db.prepare(ftsQuery);
         const ftsParams = [..._defaultSearchFields.map(() => keywords), limit];
-        const ftsResults = ftsStmt.all(...ftsParams) as { issue_key: string }[];
-        keywordMatches = ftsResults.map(r => r.issue_key);
+        const ftsResults = ftsStmt.all(...ftsParams) as { key: string }[];
+        keywordMatches = ftsResults.map(r => r.key);
       } catch (error) {
         // If FTS5 fails, continue without keyword matching
         console.error('FTS5 keyword matching failed:', error);
@@ -505,12 +479,12 @@ class JiraIssuesMCPServer {
     try {
       const stmt = this.db.prepare(baseQuery);
       debug = 'after prepare';
-      const relatedIssues = stmt.all(queryParams) as { issue_key: string }[];
+      const relatedIssues = stmt.all(queryParams) as { key: string }[];
       debug = 'after execute';
       
       // Combine keyword matches with related field matches, removing duplicates
       const allMatches = new Set([
-        ...relatedIssues.map(r => r.issue_key),
+        ...relatedIssues.map(r => r.key),
         ...keywordMatches
       ]);
       
@@ -550,7 +524,7 @@ class JiraIssuesMCPServer {
     const { issue_key, limit = 10 } = args;
     
     // retrieve the original issue so we can use it for context
-    const sourceIssueQuery = 'SELECT * FROM issues_fts WHERE issue_key = $issue_key';
+    const sourceIssueQuery = 'SELECT * FROM issues_fts WHERE key = $issue_key';
     let sourceIssue: IssueRecord | null;
     try {
       const sourceIssueStatement = this.db.prepare(sourceIssueQuery);
@@ -587,7 +561,7 @@ class JiraIssuesMCPServer {
       if (linkedIssueValue && linkedIssueValue.field_value) {
         const relatedIssueKeys = linkedIssueValue.field_value.split(',').map(issue => issue.trim());
         linkedIssues = relatedIssueKeys.map(key => {
-          const issueStmt = this.db!.prepare('SELECT * FROM issues_fts WHERE issue_key = $key');
+          const issueStmt = this.db!.prepare('SELECT * FROM issues_fts WHERE key = $key');
           return issueStmt.get({ key }) as IssueRecord | null;
         }).filter((issue): issue is IssueRecord => issue !== null); // filter out any null results
       }
@@ -627,18 +601,18 @@ class JiraIssuesMCPServer {
     const conditions: string[] = [];
     const queryParams: { [key: string]: any } = {
       project_key: sourceIssue.project_key,
-      work_group: sourceIssue.work_group,
+      work_group: sourceIssue.workGroup,
       issue_key: issue_key,
       limit: limit
     };
 
     // Match project_key and work_group
     conditions.push('project_key = $project_key');
-    conditions.push('work_group = $work_group');
-    conditions.push('issue_key != $issue_key');
+    conditions.push('workGroup = $work_group');
+    conditions.push('key != $issue_key');
 
-    // Add related_url, related_artifacts, related_pages if present
-    (['related_url', 'related_artifacts', 'related_pages'] as const).forEach(field => {
+    // Add relatedURL, relatedArtifacts, relatedPages if present
+    (['relatedURL', 'relatedArtifacts', 'relatedPages'] as const).forEach(field => {
       if (sourceIssue![field] && sourceIssue![field] !== '') {
         // if the string value has a comma character, split into multiple terms
         if (typeof sourceIssue![field] === 'string' && sourceIssue![field]!.includes(',')) {
@@ -647,8 +621,8 @@ class JiraIssuesMCPServer {
           terms.forEach((term, termIndex) => {
             let searchTerm = term;
             
-            // For related_url, extract filename from URL
-            if (field === 'related_url') {
+            // For relatedURL, extract filename from URL
+            if (field === 'relatedURL') {
               try {
                 const url = new URL(term);
                 let filename = url.pathname.split('/').pop();
@@ -673,8 +647,8 @@ class JiraIssuesMCPServer {
         } else {
           let searchTerm = sourceIssue![field]!;
           
-          // For related_url, extract filename from URL
-          if (field === 'related_url') {
+          // For relatedURL, extract filename from URL
+          if (field === 'relatedURL') {
             try {
               const url = new URL(sourceIssue![field]!);
               let filename = url.pathname.split('/').pop();
@@ -705,13 +679,13 @@ class JiraIssuesMCPServer {
       try {
         const keywordFtsQuery = 'SELECT * FROM issues_fts WHERE ' + 
           _defaultSearchFields.map(field => `${field} MATCH ?`).join(' OR ') +
-          ' AND project_key = ? AND work_group = ? AND issue_key != ?' +
+          ' AND project_key = ? AND work_group = ? AND key != ?' +
           ' ORDER BY rank DESC LIMIT ?';
         const keywordFtsStmt = this.db.prepare(keywordFtsQuery);
         const keywordFtsParams = [
           ...Array(_defaultSearchFields.length).fill(keywords),
           sourceIssue.project_key,
-          sourceIssue.work_group,
+          sourceIssue.workGroup,
           issue_key,
           limit
         ];
@@ -728,8 +702,8 @@ class JiraIssuesMCPServer {
       
       // Combine field matches with keyword matches, removing duplicates
       const allMatches = new Map<string, IssueRecord>();
-      fieldMatches.forEach(issue => allMatches.set(issue.issue_key, issue));
-      keywordMatches.forEach(issue => allMatches.set(issue.issue_key, issue));
+      fieldMatches.forEach(issue => allMatches.set(issue.key, issue));
+      keywordMatches.forEach(issue => allMatches.set(issue.key, issue));
       
       // Convert back to array and limit results
       const combinedIssues = Array.from(allMatches.values()).slice(0, limit);
@@ -929,7 +903,7 @@ class JiraIssuesMCPServer {
     
     try {
       const stmt = this.db.prepare(
-        `SELECT DISTINCT(work_group) as work_group FROM issues_fts`
+        `SELECT DISTINCT(workGroup) as work_group FROM issues`
       );
       const workGroups = stmt.all() as WorkGroupRecord[];
       
