@@ -559,16 +559,32 @@ async function updateIssuesFromCustomFields(db: Database): Promise<void> {
   let totalUpdated = 0;
   const startTime = Date.now();
 
+  const basicSelect = `field_value`;
+  const cleanedSelect = `COALESCE(trim(REPLACE(REPLACE(REPLACE(field_value, CHAR(10), ''), CHAR(13), ''), '&amp;', '&')), '')`;
+
   // Iterate through each custom field mapping
   for (const [dbColumn, fieldDef] of Object.entries(dbFieldToCustomFieldName)) {
     try {
       console.log(`Updating column '${dbColumn}' from custom field '${fieldDef.field_name}' (${fieldDef.field_id})...`);
 
+      let selectExpression;
+      switch (dbColumn) {
+        case 'workGroup':
+        case 'relatedArtifacts':
+        case 'relatedPages':
+          selectExpression = cleanedSelect;
+          break;
+
+        default:
+          selectExpression = basicSelect;
+          break;
+      }
+
       // Prepare the UPDATE statement to transfer data from custom_fields to issues
       const updateQuery = `
         UPDATE issues 
         SET ${dbColumn} = (
-          SELECT field_value 
+          SELECT ${selectExpression} 
           FROM custom_fields 
           WHERE custom_fields.issue_key = issues.key 
           AND custom_fields.field_id = $field_id
