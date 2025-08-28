@@ -106,6 +106,22 @@ interface IssueRecord {
   updated_at: string | null;
   resolved_at: string | null;
   watches: number;
+  specification: string | null;
+  appliedForVersion: string | null;
+  changeCategory: string | null;
+  changeImpact: string | null;
+  duplicateIssue: string | null;
+  grouping: string | null;
+  raisedInVersion: string | null;
+  relatedIssues: string | null;
+  relatedArtifacts: string | null;
+  relatedPages: string | null;
+  relatedSections: string | null;
+  relatedURL: string | null;
+  resolutionDescription: string | null;
+  voteDate: string | null;
+  vote: string | null;
+  workGroup: string | null;
 }
 
 interface CustomFieldRecord {
@@ -128,6 +144,113 @@ interface CommandOptions {
   initialDir?: string;
   [key: string]: any;
 }
+
+interface CustomFieldDefinition {
+  field_id: string;
+  field_key: string;
+  field_name: string;
+  db_column: string;
+}
+
+// --- Custom field mapping ---
+const dbFieldToCustomFieldName: Record<string, CustomFieldDefinition> = {
+  specification: {
+    field_id: "customfield_11302",
+    field_key: "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
+    field_name: "Specification",
+    db_column: "specification"
+  },
+  appliedForVersion: {
+    field_id: "customfield_11807",
+    field_key: "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
+    field_name: "Applied for version",
+    db_column: "appliedForVersion"
+  },
+  changeCategory: {
+    field_id: "customfield_10512",
+    field_key: "com.atlassian.jira.plugin.system.customfieldtypes:select",
+    field_name: "Change Category",
+    db_column: "changeCategory"
+  },
+  changeImpact: {
+    field_id: "customfield_10511",
+    field_key: "com.atlassian.jira.plugin.system.customfieldtypes:select",
+    field_name: "Change Impact",
+    db_column: "changeImpact"
+  },
+  duplicateIssue: {
+    field_id: "customfield_14909",
+    field_key: "com.onresolve.jira.groovy.groovyrunner:single-issue-picker-cf",
+    field_name: "Duplicate Issue",
+    db_column: "duplicateIssue"
+  },
+  grouping: {
+    field_id: "customfield_11402",
+    field_key: "com.atlassian.jira.plugin.system.customfieldtypes:labels",
+    field_name: "Grouping",
+    db_column: "grouping"
+  },
+  raisedInVersion: {
+    field_id: "customfield_11808",
+    field_key: "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
+    field_name: "Raised in version",
+    db_column: "raisedInVersion"
+  },
+  relatedIssues: {
+    field_id: "customfield_14905",
+    field_key: "com.onresolve.jira.groovy.groovyrunner:multiple-issue-picker-cf",
+    field_name: "Related Issues",
+    db_column: "relatedIssues"
+  },
+  relatedArtifacts: {
+    field_id: "customfield_11300",
+    field_key: "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
+    field_name: "Related Artifact(s)",
+    db_column: "relatedArtifacts"
+  },
+  relatedPages: {
+    field_id: "customfield_11301",
+    field_key: "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
+    field_name: "Related Page(s)",
+    db_column: "relatedPages"
+  },
+  relatedSections: {
+    field_id: "customfield_10518",
+    field_key: "com.atlassian.jira.plugin.system.customfieldtypes:textfield",
+    field_name: "Related Section(s)",
+    db_column: "relatedSections"
+  },
+  relatedURL: {
+    field_id: "customfield_10612",
+    field_key: "com.atlassian.jira.plugin.system.customfieldtypes:url",
+    field_name: "Related URL",
+    db_column: "relatedURL"
+  },
+  resolutionDescription: {
+    field_id: "customfield_10618",
+    field_key: "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+    field_name: "Resolution Description",
+    db_column: "resolutionDescription"
+  },
+  voteDate: {
+    field_id: "customfield_10525",
+    field_key: "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+    field_name: "Vote Date",
+    db_column: "voteDate"
+  },
+  vote: {
+    field_id: "customfield_10510",
+    field_key: "com.atlassian.jira.plugin.system.customfieldtypes:textfield",
+    field_name: "Resolution Vote",
+    db_column: "vote"
+  },
+  workGroup: {
+    field_id: "customfield_11400",
+    field_key: "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
+    field_name: "Work Group",
+    db_column: "workGroup"
+  },
+};
 
 // --- Database Setup ---
 
@@ -166,7 +289,23 @@ function setupDatabase(db: Database): void {
       created_at TEXT,
       updated_at TEXT,
       resolved_at TEXT,
-      watches INTEGER
+      watches INTEGER,
+      specification TEXT,
+      appliedForVersion TEXT,
+      changeCategory TEXT,
+      changeImpact TEXT,
+      duplicateIssue TEXT,
+      grouping TEXT,
+      raisedInVersion TEXT,
+      relatedIssues TEXT,
+      relatedArtifacts TEXT,
+      relatedPages TEXT,
+      relatedSections TEXT,
+      relatedURL TEXT,
+      resolutionDescription TEXT,
+      voteDate TEXT,
+      vote TEXT,
+      workGroup TEXT
     );
   `);
 
@@ -264,8 +403,32 @@ async function processXmlFile(filePath: string, db: Database): Promise<void> {
 
     // Prepare insert statements for performance
     const insertIssue = db.prepare(
-        `INSERT OR IGNORE INTO issues (key, id, title, link, project_id, project_key, description, summary, type, type_id, priority, priority_id, status, status_id, status_category_id, status_category_key, status_category_color, resolution, resolution_id, assignee, reporter, created_at, updated_at, resolved_at, watches)
-         VALUES ($key, $id, $title, $link, $project_id, $project_key, $description, $summary, $type, $type_id, $priority, $priority_id, $status, $status_id, $status_category_id, $status_category_key, $status_category_color, $resolution, $resolution_id, $assignee, $reporter, $created_at, $updated_at, $resolved_at, $watches)`
+        `INSERT OR IGNORE INTO issues (
+          key, id, title, link, 
+          project_id, project_key, description, summary, 
+          type, type_id, priority, priority_id, 
+          status, status_id, status_category_id, status_category_key, 
+          status_category_color, resolution, resolution_id, assignee, 
+          reporter, created_at, updated_at, resolved_at, 
+          watches, specification, appliedForVersion, changeCategory, 
+          changeImpact, duplicateIssue, grouping, raisedInVersion, 
+          relatedIssues, relatedArtifacts, relatedPages, relatedSections, 
+          relatedURL, resolutionDescription, voteDate, vote, 
+          workGroup
+         )
+         VALUES (
+          $key, $id, $title, $link, 
+          $project_id, $project_key, $description, $summary, 
+          $type, $type_id, $priority, $priority_id, 
+          $status, $status_id, $status_category_id, $status_category_key, 
+          $status_category_color, $resolution, $resolution_id, $assignee, 
+          $reporter, $created_at, $updated_at, $resolved_at, 
+          $watches, $specification, $appliedForVersion, $changeCategory,
+          $changeImpact, $duplicateIssue, $grouping, $raisedInVersion,
+          $relatedIssues, $relatedArtifacts, $relatedPages, $relatedSections,
+          $relatedURL, $resolutionDescription, $voteDate, $vote,
+          $workGroup
+         )`
     );
 
     const insertCustomField = db.prepare(
@@ -287,6 +450,7 @@ async function processXmlFile(filePath: string, db: Database): Promise<void> {
                 continue;
             }
 
+            // insert the issue record with the properties we can get from the primary record - custom fields just set to null for now
             const issueRecord: IssueRecord = {
                 key: issueKey,
                 id: item.key?.["@_id"],
@@ -313,6 +477,22 @@ async function processXmlFile(filePath: string, db: Database): Promise<void> {
                 updated_at: toISO(item.updated),
                 resolved_at: toISO(item.resolved),
                 watches: Number(item.watches) || 0,
+                specification: null,
+                appliedForVersion: null,
+                changeCategory: null,
+                changeImpact: null,
+                duplicateIssue: null,
+                grouping: null,
+                raisedInVersion: null,
+                relatedIssues: null,
+                relatedArtifacts: null,
+                relatedPages: null,
+                relatedSections: null,
+                relatedURL: null,
+                resolutionDescription: null,
+                voteDate: null,
+                vote: null,
+                workGroup: null,
             };
 
             insertIssue.run(issueRecord);
@@ -373,6 +553,49 @@ async function processXmlFile(filePath: string, db: Database): Promise<void> {
   }
 }
 
+async function updateIssuesFromCustomFields(db: Database): Promise<void> {
+  console.log("\nMigrating select custom fields to main issues table...");
+
+  let totalUpdated = 0;
+  const startTime = Date.now();
+
+  // Iterate through each custom field mapping
+  for (const [dbColumn, fieldDef] of Object.entries(dbFieldToCustomFieldName)) {
+    try {
+      console.log(`Updating column '${dbColumn}' from custom field '${fieldDef.field_name}' (${fieldDef.field_id})...`);
+
+      // Prepare the UPDATE statement to transfer data from custom_fields to issues
+      const updateQuery = `
+        UPDATE issues 
+        SET ${dbColumn} = (
+          SELECT field_value 
+          FROM custom_fields 
+          WHERE custom_fields.issue_key = issues.key 
+          AND custom_fields.field_id = $field_id
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM custom_fields 
+          WHERE custom_fields.issue_key = issues.key 
+          AND custom_fields.field_id = $field_id
+        )
+      `;
+
+      const updateStmt = db.prepare(updateQuery);
+      const result = updateStmt.run({ field_id: fieldDef.field_id });
+      
+      console.log(`✓ Updated ${result.changes} records for '${dbColumn}'`);
+      totalUpdated += result.changes;
+
+    } catch (error) {
+      console.error(`✗ Failed to update column '${dbColumn}':`, error);
+      // Continue with other fields even if one fails
+    }
+  }
+
+  const elapsedTime = Date.now() - startTime;
+  console.log(`Migration completed: ${totalUpdated} total records updated in ${elapsedTime}ms`);
+}
+
 
 // --- Main Execution ---
 async function main(): Promise<void> {
@@ -423,6 +646,9 @@ async function main(): Promise<void> {
   for (const filePath of files) {
     await processXmlFile(filePath.replace(/\\/g, '/'), db);
   }
+
+  // Migrate custom field data from custom_fields table to issues table
+  await updateIssuesFromCustomFields(db);
 
   db.close();
   console.log("\nImport process finished.");
