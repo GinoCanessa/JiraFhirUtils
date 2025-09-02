@@ -150,7 +150,7 @@ internal class JiraXmlToSql
         command.CommandText = @"
             CREATE TABLE IF NOT EXISTS issues (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                key TEXT,
+                key TEXT UNIQUE,
                 title TEXT,
                 issue_url TEXT,
                 project_id INTEGER,
@@ -197,12 +197,13 @@ internal class JiraXmlToSql
         command.CommandText = @"
             CREATE TABLE IF NOT EXISTS custom_fields (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                issue_id INTEGER,
                 issue_key TEXT,
                 field_id TEXT,
                 field_key TEXT,
                 field_name TEXT,
                 field_value TEXT,
-                FOREIGN KEY (issue_key) REFERENCES issues(key)
+                FOREIGN KEY (issue_id) REFERENCES issues(id)
             );";
         command.ExecuteNonQuery();
 
@@ -211,11 +212,12 @@ internal class JiraXmlToSql
             CREATE TABLE IF NOT EXISTS comments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 comment_id TEXT UNIQUE,
+                issue_id INTEGER,
                 issue_key TEXT,
                 author TEXT,
                 created_at TEXT,
                 body TEXT,
-                FOREIGN KEY (issue_key) REFERENCES issues(key)
+                FOREIGN KEY (issue_id) REFERENCES issues(id)
             );";
         command.ExecuteNonQuery();
 
@@ -258,73 +260,140 @@ internal class JiraXmlToSql
 
         try
         {
-            JiraRss jiraData = JiraXmlHelper.DeserializeFromFile(filePath);
-            List<JiraItem> items = jiraData.Channel.Items;
-            
-            if (items.Count == 0)
+            // Load and validate JIRA data from the XML file
+            List<JiraItem> items;
+            try
             {
+                items = LoadJiraDataFromFile(filePath);
+            }
+            catch (InvalidOperationException)
+            {
+                // Handle empty file case - already logged in LoadJiraDataFromFile
                 Console.WriteLine($"No items found in {filePath}.");
                 return;
             }
 
+            // Prepare SQL commands for bulk operations  
+            (SqliteCommand issueCommand, SqliteCommand customFieldCommand, SqliteCommand commentCommand) commands = PrepareInsertCommands(connection);
+
+            // Process all items within the transaction
+            await ProcessBatchWithTransaction(items, connection, commands, filePath);
+        }
+        catch (Exception error)
+        {
+            Console.WriteLine($"Failed to process file {filePath}: {error.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Loads and validates JIRA data from an XML file.
+    /// </summary>
+    /// <param name="filePath">The path to the XML file</param>
+    /// <returns>List of JIRA items</returns>
+    /// <exception cref="InvalidOperationException">Thrown when no items are found in the file</exception>
+    private List<JiraItem> LoadJiraDataFromFile(string filePath)
+    {
+        JiraRss jiraData = JiraXmlHelper.DeserializeFromFile(filePath);
+        List<JiraItem> items = jiraData.Channel.Items;
+        
+        if (items.Count == 0)
+        {
+            throw new InvalidOperationException($"No items found in {filePath}.");
+        }
+
+        return items;
+    }
+
+    /// <summary>
+    /// Prepares the SQL insert commands for bulk operations.
+    /// </summary>
+    /// <param name="connection">The database connection</param>
+    /// <returns>Tuple containing issue, custom field, and comment insert commands</returns>
+    private (SqliteCommand issueCommand, SqliteCommand customFieldCommand, SqliteCommand commentCommand) 
+        PrepareInsertCommands(SqliteConnection connection)
+    {
+        // Prepare insert statement for issues
+        SqliteCommand insertIssueCommand = connection.CreateCommand();
+        insertIssueCommand.CommandText = @"
+            INSERT OR IGNORE INTO issues (
+                key, title, issue_url, 
+                project_id, project_key, description, summary, 
+                type, type_id, priority, priority_id, 
+                status, status_id, status_category_id, status_category_key, 
+                status_category_color, resolution, resolution_id, assignee, 
+                reporter, created_at, updated_at, resolved_at, 
+                watches, specification, appliedForVersion, changeCategory, 
+                changeImpact, duplicateIssue, grouping, raisedInVersion, 
+                relatedIssues, relatedArtifacts, relatedPages, relatedSections, 
+                relatedURL, resolutionDescription, voteDate, vote, 
+                workGroup
+            ) VALUES (
+                $key, $title, $issue_url, 
+                $project_id, $project_key, $description, $summary, 
+                $type, $type_id, $priority, $priority_id, 
+                $status, $status_id, $status_category_id, $status_category_key, 
+                $status_category_color, $resolution, $resolution_id, $assignee, 
+                $reporter, $created_at, $updated_at, $resolved_at, 
+                $watches, $specification, $appliedForVersion, $changeCategory,
+                $changeImpact, $duplicateIssue, $grouping, $raisedInVersion,
+                $relatedIssues, $relatedArtifacts, $relatedPages, $relatedSections,
+                $relatedURL, $resolutionDescription, $voteDate, $vote,
+                $workGroup
+            )";
+
+        // Prepare insert statement for custom fields
+        SqliteCommand insertCustomFieldCommand = connection.CreateCommand();
+        insertCustomFieldCommand.CommandText = @"
+            INSERT INTO custom_fields (issue_id, issue_key, field_id, field_key, field_name, field_value)
+            VALUES ($issue_id, $issue_key, $field_id, $field_key, $field_name, $field_value)";
+        insertCustomFieldCommand.Parameters.AddWithValue("$issue_id", "");
+        insertCustomFieldCommand.Parameters.AddWithValue("$issue_key", "");
+        insertCustomFieldCommand.Parameters.AddWithValue("$field_id", "");
+        insertCustomFieldCommand.Parameters.AddWithValue("$field_key", "");
+        insertCustomFieldCommand.Parameters.AddWithValue("$field_name", "");
+        insertCustomFieldCommand.Parameters.AddWithValue("$field_value", "");
+
+        // Prepare insert statement for comments
+        SqliteCommand insertCommentCommand = connection.CreateCommand();
+        insertCommentCommand.CommandText = @"
+            INSERT OR IGNORE INTO comments (comment_id, issue_id, issue_key, author, created_at, body)
+            VALUES ($comment_id, $issue_id, $issue_key, $author, $created_at, $body)";
+        insertCommentCommand.Parameters.AddWithValue("$comment_id", "");
+        insertCommentCommand.Parameters.AddWithValue("$issue_id", "");
+        insertCommentCommand.Parameters.AddWithValue("$issue_key", "");
+        insertCommentCommand.Parameters.AddWithValue("$author", "");
+        insertCommentCommand.Parameters.AddWithValue("$created_at", "");
+        insertCommentCommand.Parameters.AddWithValue("$body", "");
+
+        return (insertIssueCommand, insertCustomFieldCommand, insertCommentCommand);
+    }
+
+    /// <summary>
+    /// Processes a batch of JIRA items within a database transaction.
+    /// </summary>
+    /// <param name="items">List of JIRA items to process</param>
+    /// <param name="connection">The database connection</param>
+    /// <param name="commands">Tuple containing the prepared SQL commands</param>
+    /// <param name="filePath">The file path for logging purposes</param>
+    /// <returns>Number of items processed</returns>
+    private async Task<int> ProcessBatchWithTransaction(
+        List<JiraItem> items,
+        SqliteConnection connection,
+        (SqliteCommand issueCommand, SqliteCommand customFieldCommand, SqliteCommand commentCommand) commands,
+        string filePath)
+    {
+        try
+        {
             // Use a transaction for bulk inserts from a single file
             using SqliteTransaction transaction = connection.BeginTransaction();
 
-            // Prepare insert statements for performance
-            SqliteCommand insertIssueCommand = connection.CreateCommand();
-            insertIssueCommand.Transaction = transaction;
-            insertIssueCommand.CommandText = @"
-                INSERT OR IGNORE INTO issues (
-                    key, id, title, issue_url, 
-                    project_id, project_key, description, summary, 
-                    type, type_id, priority, priority_id, 
-                    status, status_id, status_category_id, status_category_key, 
-                    status_category_color, resolution, resolution_id, assignee, 
-                    reporter, created_at, updated_at, resolved_at, 
-                    watches, specification, appliedForVersion, changeCategory, 
-                    changeImpact, duplicateIssue, grouping, raisedInVersion, 
-                    relatedIssues, relatedArtifacts, relatedPages, relatedSections, 
-                    relatedURL, resolutionDescription, voteDate, vote, 
-                    workGroup
-                ) VALUES (
-                    $key, $id, $title, $issue_url, 
-                    $project_id, $project_key, $description, $summary, 
-                    $type, $type_id, $priority, $priority_id, 
-                    $status, $status_id, $status_category_id, $status_category_key, 
-                    $status_category_color, $resolution, $resolution_id, $assignee, 
-                    $reporter, $created_at, $updated_at, $resolved_at, 
-                    $watches, $specification, $appliedForVersion, $changeCategory,
-                    $changeImpact, $duplicateIssue, $grouping, $raisedInVersion,
-                    $relatedIssues, $relatedArtifacts, $relatedPages, $relatedSections,
-                    $relatedURL, $resolutionDescription, $voteDate, $vote,
-                    $workGroup
-                )";
-            AddIssueInsertParameters(insertIssueCommand);
-
-            SqliteCommand insertCustomFieldCommand = connection.CreateCommand();
-            insertCustomFieldCommand.Transaction = transaction;
-            insertCustomFieldCommand.CommandText = @"
-                INSERT INTO custom_fields (issue_key, field_id, field_key, field_name, field_value)
-                VALUES ($issue_key, $field_id, $field_key, $field_name, $field_value)";
-            insertCustomFieldCommand.Parameters.AddWithValue("$issue_key", "");
-            insertCustomFieldCommand.Parameters.AddWithValue("$field_id", "");
-            insertCustomFieldCommand.Parameters.AddWithValue("$field_key", "");
-            insertCustomFieldCommand.Parameters.AddWithValue("$field_name", "");
-            insertCustomFieldCommand.Parameters.AddWithValue("$field_value", "");
-
-            SqliteCommand insertCommentCommand = connection.CreateCommand();
-            insertCommentCommand.Transaction = transaction;
-            insertCommentCommand.CommandText = @"
-                INSERT OR IGNORE INTO comments (comment_id, issue_key, author, created_at, body)
-                VALUES ($comment_id, $issue_key, $author, $created_at, $body)";
-            insertCommentCommand.Parameters.AddWithValue("$comment_id", "");
-            insertCommentCommand.Parameters.AddWithValue("$issue_key", "");
-            insertCommentCommand.Parameters.AddWithValue("$author", "");
-            insertCommentCommand.Parameters.AddWithValue("$created_at", "");
-            insertCommentCommand.Parameters.AddWithValue("$body", "");
+            // Set transaction for all commands
+            commands.issueCommand.Transaction = transaction;
+            commands.customFieldCommand.Transaction = transaction;
+            commands.commentCommand.Transaction = transaction;
 
             int processedCount = 0;
-            
+
             foreach (JiraItem item in items)
             {
                 string? issueKey = item.Key.Value;
@@ -335,75 +404,52 @@ internal class JiraXmlToSql
                 }
 
                 // Process the issue
-                ProcessIssue(item, issueKey, insertIssueCommand);
-                await insertIssueCommand.ExecuteNonQueryAsync();
+                try
+                {
+                    ProcessIssue(item, issueKey, commands.issueCommand);
+                    await commands.issueCommand.ExecuteNonQueryAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error processing issue '{issueKey}' in {filePath}: {ex.Message}");
+                    continue; // Skip this item and continue with the next
+                }
 
                 // Process custom fields
-                await ProcessCustomFields(item, issueKey, insertCustomFieldCommand);
+                try
+                {
+                    await ProcessCustomFields(item, issueKey, connection, commands.customFieldCommand);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error processing custom fields for issue '{issueKey}' in {filePath}: {ex.Message}");
+                    continue; // Skip this item and continue with the next
+                }
 
                 // Process comments
-                await ProcessComments(item, issueKey, insertCommentCommand);
-                
+                try
+                {
+                    await ProcessComments(item, issueKey, connection, commands.commentCommand);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error processing comments for issue '{issueKey}' in {filePath}: {ex.Message}");
+                    continue; // Skip this item and continue with the next
+                }
+
                 processedCount++;
             }
 
             await transaction.CommitAsync();
             Console.WriteLine($"Successfully inserted or updated {processedCount} issues from {filePath}.");
 
+            return processedCount;
         }
-        catch (Exception error)
+        catch (Exception ex)
         {
-            Console.WriteLine($"Failed to process file {filePath}: {error.Message}");
+            Console.WriteLine($"Error processing batch from {filePath}: {ex.Message}");
+            throw;
         }
-    }
-
-    /// <summary>
-    /// Adds all required parameters to the insert issue command.
-    /// </summary>
-    /// <param name="command">The command to add parameters to</param>
-    private void AddIssueInsertParameters(SqliteCommand command)
-    {
-        command.Parameters.AddWithValue("$key", "");
-        command.Parameters.AddWithValue("$id", "");
-        command.Parameters.AddWithValue("$title", "");
-        command.Parameters.AddWithValue("$issue_url", "");
-        command.Parameters.AddWithValue("$project_id", "");
-        command.Parameters.AddWithValue("$project_key", "");
-        command.Parameters.AddWithValue("$description", "");
-        command.Parameters.AddWithValue("$summary", "");
-        command.Parameters.AddWithValue("$type", "");
-        command.Parameters.AddWithValue("$type_id", "");
-        command.Parameters.AddWithValue("$priority", "");
-        command.Parameters.AddWithValue("$priority_id", "");
-        command.Parameters.AddWithValue("$status", "");
-        command.Parameters.AddWithValue("$status_id", "");
-        command.Parameters.AddWithValue("$status_category_id", "");
-        command.Parameters.AddWithValue("$status_category_key", "");
-        command.Parameters.AddWithValue("$status_category_color", "");
-        command.Parameters.AddWithValue("$resolution", "");
-        command.Parameters.AddWithValue("$resolution_id", "");
-        command.Parameters.AddWithValue("$assignee", "");
-        command.Parameters.AddWithValue("$reporter", "");
-        command.Parameters.AddWithValue("$created_at", "");
-        command.Parameters.AddWithValue("$updated_at", "");
-        command.Parameters.AddWithValue("$resolved_at", "");
-        command.Parameters.AddWithValue("$watches", "");
-        command.Parameters.AddWithValue("$specification", "");
-        command.Parameters.AddWithValue("$appliedForVersion", "");
-        command.Parameters.AddWithValue("$changeCategory", "");
-        command.Parameters.AddWithValue("$changeImpact", "");
-        command.Parameters.AddWithValue("$duplicateIssue", "");
-        command.Parameters.AddWithValue("$grouping", "");
-        command.Parameters.AddWithValue("$raisedInVersion", "");
-        command.Parameters.AddWithValue("$relatedIssues", "");
-        command.Parameters.AddWithValue("$relatedArtifacts", "");
-        command.Parameters.AddWithValue("$relatedPages", "");
-        command.Parameters.AddWithValue("$relatedSections", "");
-        command.Parameters.AddWithValue("$relatedURL", "");
-        command.Parameters.AddWithValue("$resolutionDescription", "");
-        command.Parameters.AddWithValue("$voteDate", "");
-        command.Parameters.AddWithValue("$vote", "");
-        command.Parameters.AddWithValue("$workGroup", "");
     }
 
     /// <summary>
@@ -414,51 +460,9 @@ internal class JiraXmlToSql
     /// <param name="command">The insert command to populate</param>
     private void ProcessIssue(JiraItem item, string issueKey, SqliteCommand command)
     {
-        // Set parameter values
-        command.Parameters["$key"].Value = issueKey;
-        command.Parameters["$id"].Value = item.Key.Id != 0 ? item.Key.Id.ToString() : (object)DBNull.Value;
-        command.Parameters["$title"].Value = !string.IsNullOrWhiteSpace(item.Title) ? item.Title : (object)DBNull.Value;
-        command.Parameters["$issue_url"].Value = !string.IsNullOrWhiteSpace(item.Link) ? item.Link : (object)DBNull.Value;
-        command.Parameters["$project_id"].Value = item.Project.Id != 0 ? item.Project.Id.ToString() : (object)DBNull.Value;
-        command.Parameters["$project_key"].Value = !string.IsNullOrWhiteSpace(item.Project.Key) ? item.Project.Key : (object)DBNull.Value;
-        command.Parameters["$description"].Value = !string.IsNullOrWhiteSpace(item.Description) ? item.Description : (object)DBNull.Value;
-        command.Parameters["$summary"].Value = !string.IsNullOrWhiteSpace(item.Summary) ? item.Summary : (object)DBNull.Value;
-        command.Parameters["$type"].Value = !string.IsNullOrWhiteSpace(item.Type.Name) ? item.Type.Name : (object)DBNull.Value;
-        command.Parameters["$type_id"].Value = item.Type.Id != 0 ? item.Type.Id.ToString() : (object)DBNull.Value;
-        command.Parameters["$priority"].Value = !string.IsNullOrWhiteSpace(item.Priority.Name) ? item.Priority.Name : (object)DBNull.Value;
-        command.Parameters["$priority_id"].Value = item.Priority.Id != 0 ? item.Priority.Id.ToString() : (object)DBNull.Value;
-        command.Parameters["$status"].Value = !string.IsNullOrWhiteSpace(item.Status.Name) ? item.Status.Name : (object)DBNull.Value;
-        command.Parameters["$status_id"].Value = item.Status.Id != 0 ? item.Status.Id.ToString() : (object)DBNull.Value;
-        command.Parameters["$status_category_id"].Value = item.Status.StatusCategory?.Id != 0 ? item.Status.StatusCategory?.Id.ToString() : (object)DBNull.Value;
-        command.Parameters["$status_category_key"].Value = !string.IsNullOrWhiteSpace(item.Status.StatusCategory?.Key) ? item.Status.StatusCategory.Key : (object)DBNull.Value;
-        command.Parameters["$status_category_color"].Value = !string.IsNullOrWhiteSpace(item.Status.StatusCategory?.ColorName) ? item.Status.StatusCategory.ColorName : (object)DBNull.Value;
-        command.Parameters["$resolution"].Value = !string.IsNullOrWhiteSpace(item.Resolution?.Name) ? item.Resolution.Name : (object)DBNull.Value;
-        command.Parameters["$resolution_id"].Value = item.Resolution?.Id != 0 ? item.Resolution?.Id.ToString() : (object)DBNull.Value;
-        command.Parameters["$assignee"].Value = !string.IsNullOrWhiteSpace(item.Assignee?.Username) ? item.Assignee.Username : (object)DBNull.Value;
-        command.Parameters["$reporter"].Value = !string.IsNullOrWhiteSpace(item.Reporter?.Username) ? item.Reporter.Username : (object)DBNull.Value;
-        command.Parameters["$created_at"].Value = ToIsoString(item.Created) ?? (object)DBNull.Value;
-        command.Parameters["$updated_at"].Value = ToIsoString(item.Updated) ?? (object)DBNull.Value;
-        command.Parameters["$resolved_at"].Value = ToIsoString(item.Resolved) ?? (object)DBNull.Value;
-
-        command.Parameters["$watches"].Value = item.Watches != 0 ? item.Watches : (object)DBNull.Value;
-
-        // Initialize custom fields to null - they will be populated later
-        command.Parameters["$specification"].Value = DBNull.Value;
-        command.Parameters["$appliedForVersion"].Value = DBNull.Value;
-        command.Parameters["$changeCategory"].Value = DBNull.Value;
-        command.Parameters["$changeImpact"].Value = DBNull.Value;
-        command.Parameters["$duplicateIssue"].Value = DBNull.Value;
-        command.Parameters["$grouping"].Value = DBNull.Value;
-        command.Parameters["$raisedInVersion"].Value = DBNull.Value;
-        command.Parameters["$relatedIssues"].Value = DBNull.Value;
-        command.Parameters["$relatedArtifacts"].Value = DBNull.Value;
-        command.Parameters["$relatedPages"].Value = DBNull.Value;
-        command.Parameters["$relatedSections"].Value = DBNull.Value;
-        command.Parameters["$relatedURL"].Value = DBNull.Value;
-        command.Parameters["$resolutionDescription"].Value = DBNull.Value;
-        command.Parameters["$voteDate"].Value = DBNull.Value;
-        command.Parameters["$vote"].Value = DBNull.Value;
-        command.Parameters["$workGroup"].Value = DBNull.Value;
+        // Map JIRA item to database record using extension method and bind parameters
+        IssueRecord issueRecord = item.ToIssueRecord(issueKey);
+        BindIssueRecordParameters(command, issueRecord);
     }
 
     /// <summary>
@@ -466,37 +470,25 @@ internal class JiraXmlToSql
     /// </summary>
     /// <param name="item">The JIRA item object</param>
     /// <param name="issueKey">The issue key</param>
+    /// <param name="connection">The database connection</param>
     /// <param name="command">The insert custom field command</param>
-    private async Task ProcessCustomFields(JiraItem item, string issueKey, SqliteCommand command)
+    private async Task ProcessCustomFields(JiraItem item, string issueKey, SqliteConnection connection, SqliteCommand command)
     {
         List<JiraXmlCustomField> customFields = item.CustomFields?.CustomFieldList ?? new List<JiraXmlCustomField>();
         
+        // Resolve issue key to database ID
+        int? issueId = await ResolveIssueKeyToIdAsync(connection, issueKey);
+        if (issueId == null)
+        {
+            Console.WriteLine($"Warning: Could not resolve issue key '{issueKey}' to database ID. Skipping custom fields.");
+            return;
+        }
+        
         foreach (JiraXmlCustomField field in customFields)
         {
-            string? fieldId = !string.IsNullOrWhiteSpace(field.Id) ? field.Id : null;
-            string? fieldKey = !string.IsNullOrWhiteSpace(field.Key) ? field.Key : null;
-            string? fieldName = !string.IsNullOrWhiteSpace(field.CustomFieldName) ? field.CustomFieldName : null;
-
-            // Process custom field values
-            List<JiraCustomFieldValue> customFieldValues = field.CustomFieldValues?.Values ?? new List<JiraCustomFieldValue>();
-            string? value = null;
-            
-            if (customFieldValues.Count > 1)
-            {
-                // Handle array of values
-                value = string.Join(", ", customFieldValues.Select(v => v.Value));
-            }
-            else if (customFieldValues.Count == 1)
-            {
-                value = customFieldValues.First().Value;
-            }
-
-            // Insert the custom field record
-            command.Parameters["$issue_key"].Value = issueKey;
-            command.Parameters["$field_id"].Value = fieldId ?? (object)DBNull.Value;
-            command.Parameters["$field_key"].Value = fieldKey ?? (object)DBNull.Value;
-            command.Parameters["$field_name"].Value = fieldName ?? (object)DBNull.Value;
-            command.Parameters["$field_value"].Value = value ?? (object)DBNull.Value;
+            // Convert to database record using extension method and bind parameters
+            CustomFieldRecord customFieldRecord = field.ToCustomFieldRecord(issueKey) with { IssueId = issueId.Value };
+            BindCustomFieldRecordParameters(command, customFieldRecord);
             
             await command.ExecuteNonQueryAsync();
         }
@@ -507,24 +499,25 @@ internal class JiraXmlToSql
     /// </summary>
     /// <param name="item">The JIRA item object</param>
     /// <param name="issueKey">The issue key</param>
+    /// <param name="connection">The database connection</param>
     /// <param name="command">The insert comment command</param>
-    private async Task ProcessComments(JiraItem item, string issueKey, SqliteCommand command)
+    private async Task ProcessComments(JiraItem item, string issueKey, SqliteConnection connection, SqliteCommand command)
     {
         List<JiraComment> comments = item.Comments?.CommentList ?? new List<JiraComment>();
         
+        // Resolve issue key to database ID
+        int? issueId = await ResolveIssueKeyToIdAsync(connection, issueKey);
+        if (issueId == null)
+        {
+            Console.WriteLine($"Warning: Could not resolve issue key '{issueKey}' to database ID. Skipping comments.");
+            return;
+        }
+        
         foreach (JiraComment comment in comments)
         {
-            string? commentId = comment.Id != 0 ? comment.Id.ToString() : null;
-            string? author = !string.IsNullOrWhiteSpace(comment.Author) ? comment.Author : null;
-            string? created = !string.IsNullOrWhiteSpace(comment.Created) ? comment.Created : null;
-            string? body = !string.IsNullOrWhiteSpace(comment.Body) ? comment.Body : null;
-
-            // Insert the comment record
-            command.Parameters["$comment_id"].Value = commentId ?? (object)DBNull.Value;
-            command.Parameters["$issue_key"].Value = issueKey;
-            command.Parameters["$author"].Value = author ?? (object)DBNull.Value;
-            command.Parameters["$created_at"].Value = ToIsoString(created) ?? (object)DBNull.Value;
-            command.Parameters["$body"].Value = body ?? (object)DBNull.Value;
+            // Convert to database record using extension method and bind parameters
+            CommentRecord commentRecord = comment.ToCommentRecord(issueKey) with { IssueId = issueId.Value };
+            BindCommentRecordParameters(command, commentRecord);
             
             await command.ExecuteNonQueryAsync();
         }
@@ -565,7 +558,7 @@ internal class JiraXmlToSql
         const string cleanedSelect = "COALESCE(trim(REPLACE(REPLACE(REPLACE(field_value, CHAR(10), ''), CHAR(13), ''), '&amp;', '&')), '')";
 
         // Iterate through each custom field mapping
-        foreach ((string dbColumn, JiraCustomField.CustomFieldInfo fieldDef) in JiraCustomField.DbFieldToCustomFieldName)
+        foreach ((string dbColumn, JiraCustomField.CustomFieldMappingInfo fieldDef) in JiraCustomField.CustomFieldMappings)
         {
             try
             {
@@ -609,5 +602,102 @@ internal class JiraXmlToSql
 
         TimeSpan elapsedTime = DateTime.UtcNow - startTime;
         Console.WriteLine($"Migration completed: {totalUpdated} total records updated in {elapsedTime.TotalMilliseconds}ms");
+    }
+
+
+
+    /// <summary>
+    /// Resolves an issue key to its database ID.
+    /// </summary>
+    /// <param name="connection">The database connection</param>
+    /// <param name="issueKey">The issue key to resolve</param>
+    /// <returns>The database ID for the issue, or null if not found</returns>
+    private static async Task<int?> ResolveIssueKeyToIdAsync(SqliteConnection connection, string issueKey)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT id FROM issues WHERE key = $key";
+        command.Parameters.AddWithValue("$key", issueKey);
+        
+        object? result = await command.ExecuteScalarAsync();
+        return result is long id ? (int)id : null;
+    }
+
+    /// <summary>
+    /// Helper method to bind IssueRecord properties to SQLite command parameters
+    /// </summary>
+    /// <param name="command">The SQLite command to bind parameters to</param>
+    /// <param name="issueRecord">The issue record with values to bind</param>
+    private static void BindIssueRecordParameters(SqliteCommand command, IssueRecord issueRecord)
+    {
+        command.AddParameterWithValue("$key", issueRecord.Key);
+        command.AddParameterWithValue("$title", issueRecord.Title);
+        command.AddParameterWithValue("$issue_url", issueRecord.IssueUrl);
+        command.AddParameterWithValue("$project_id", issueRecord.ProjectId);
+        command.AddParameterWithValue("$project_key", issueRecord.ProjectKey);
+        command.AddParameterWithValue("$description", issueRecord.Description);
+        command.AddParameterWithValue("$summary", issueRecord.Summary);
+        command.AddParameterWithValue("$type", issueRecord.Type);
+        command.AddParameterWithValue("$type_id", issueRecord.TypeId);
+        command.AddParameterWithValue("$priority", issueRecord.Priority);
+        command.AddParameterWithValue("$priority_id", issueRecord.PriorityId);
+        command.AddParameterWithValue("$status", issueRecord.Status);
+        command.AddParameterWithValue("$status_id", issueRecord.StatusId);
+        command.AddParameterWithValue("$status_category_id", issueRecord.StatusCategoryId);
+        command.AddParameterWithValue("$status_category_key", issueRecord.StatusCategoryKey);
+        command.AddParameterWithValue("$status_category_color", issueRecord.StatusCategoryColor);
+        command.AddParameterWithValue("$resolution", issueRecord.Resolution);
+        command.AddParameterWithValue("$resolution_id", issueRecord.ResolutionId);
+        command.AddParameterWithValue("$assignee", issueRecord.Assignee);
+        command.AddParameterWithValue("$reporter", issueRecord.Reporter);
+        command.Parameters.AddWithValue("$created_at", SqliteParameterExtensions.FormatDateTimeForDatabase(issueRecord.CreatedAt));
+        command.Parameters.AddWithValue("$updated_at", SqliteParameterExtensions.FormatDateTimeForDatabase(issueRecord.UpdatedAt));
+        command.Parameters.AddWithValue("$resolved_at", SqliteParameterExtensions.FormatDateTimeForDatabase(issueRecord.ResolvedAt));
+        command.AddParameterWithValue("$watches", issueRecord.Watches);
+        command.AddParameterWithValue("$specification", issueRecord.Specification);
+        command.AddParameterWithValue("$appliedForVersion", issueRecord.AppliedForVersion);
+        command.AddParameterWithValue("$changeCategory", issueRecord.ChangeCategory);
+        command.AddParameterWithValue("$changeImpact", issueRecord.ChangeImpact);
+        command.AddParameterWithValue("$duplicateIssue", issueRecord.DuplicateIssue);
+        command.AddParameterWithValue("$grouping", issueRecord.Grouping);
+        command.AddParameterWithValue("$raisedInVersion", issueRecord.RaisedInVersion);
+        command.AddParameterWithValue("$relatedIssues", issueRecord.RelatedIssues);
+        command.AddParameterWithValue("$relatedArtifacts", issueRecord.RelatedArtifacts);
+        command.AddParameterWithValue("$relatedPages", issueRecord.RelatedPages);
+        command.AddParameterWithValue("$relatedSections", issueRecord.RelatedSections);
+        command.AddParameterWithValue("$relatedURL", issueRecord.RelatedURL);
+        command.AddParameterWithValue("$resolutionDescription", issueRecord.ResolutionDescription);
+        command.Parameters.AddWithValue("$voteDate", SqliteParameterExtensions.FormatDateTimeForDatabase(issueRecord.VoteDate));
+        command.AddParameterWithValue("$vote", issueRecord.Vote);
+        command.AddParameterWithValue("$workGroup", issueRecord.WorkGroup);
+    }
+
+    /// <summary>
+    /// Helper method to bind CustomFieldRecord properties to SQLite command parameters
+    /// </summary>
+    /// <param name="command">The SQLite command to bind parameters to</param>
+    /// <param name="customFieldRecord">The custom field record with values to bind</param>
+    private static void BindCustomFieldRecordParameters(SqliteCommand command, CustomFieldRecord customFieldRecord)
+    {
+        command.SetParameterValue("$issue_id", customFieldRecord.IssueId);
+        command.SetParameterValue("$issue_key", customFieldRecord.IssueKey);
+        command.SetParameterValue("$field_id", customFieldRecord.FieldId);
+        command.SetParameterValue("$field_key", customFieldRecord.FieldKey);
+        command.SetParameterValue("$field_name", customFieldRecord.FieldName);
+        command.SetParameterValue("$field_value", customFieldRecord.FieldValue);
+    }
+
+    /// <summary>
+    /// Helper method to bind CommentRecord properties to SQLite command parameters
+    /// </summary>
+    /// <param name="command">The SQLite command to bind parameters to</param>
+    /// <param name="commentRecord">The comment record with values to bind</param>
+    private static void BindCommentRecordParameters(SqliteCommand command, CommentRecord commentRecord)
+    {
+        command.SetParameterValue("$comment_id", commentRecord.JiraCommentId != 0 ? commentRecord.JiraCommentId.ToString() : null);
+        command.SetParameterValue("$issue_id", commentRecord.IssueId);
+        command.SetParameterValue("$issue_key", commentRecord.IssueKey);
+        command.SetParameterValue("$author", commentRecord.Author);
+        command.Parameters["$created_at"].Value = SqliteParameterExtensions.FormatDateTimeForDatabase(commentRecord.CreatedAt);
+        command.SetParameterValue("$body", commentRecord.Body);
     }
 }

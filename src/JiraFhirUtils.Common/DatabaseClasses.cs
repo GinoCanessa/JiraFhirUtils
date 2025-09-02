@@ -54,7 +54,7 @@ public record class IssueRecord
 public record class CommentRecord
 {
     public required int Id { get; init; }
-    public required int CommentId { get; init; }
+    public required int JiraCommentId { get; init; }
     public required int IssueId { get; init; }
     public required string IssueKey { get; init; }
     public required string Author { get; init; }
@@ -68,6 +68,7 @@ public record class CommentRecord
 public record class CustomFieldRecord
 {
     public int Id { get; init; }
+    public required int IssueId { get; init; }
     public required string IssueKey { get; init; }
     public required string? FieldId { get; init; }
     public required string? FieldKey { get; init; }

@@ -367,17 +367,21 @@ namespace jf_loader.Load
         public static JiraRss DeserializeFromFile(string xmlFilePath)
         {
             if (string.IsNullOrWhiteSpace(xmlFilePath))
+            {
                 throw new ArgumentNullException(nameof(xmlFilePath));
+            }
 
             if (!File.Exists(xmlFilePath))
+            {
                 throw new FileNotFoundException($"XML file not found: {xmlFilePath}");
+            }
 
-            var serializer = new XmlSerializer(typeof(JiraRss));
+            XmlSerializer serializer = new(typeof(JiraRss));
             
-            using var fileStream = new FileStream(xmlFilePath, FileMode.Open, FileAccess.Read);
-            using var reader = new StreamReader(fileStream, Encoding.UTF8);
-            
-            var result = serializer.Deserialize(reader) as JiraRss;
+            using FileStream fileStream = new(xmlFilePath, FileMode.Open, FileAccess.Read);
+            using StreamReader reader = new(fileStream, Encoding.UTF8);
+
+            JiraRss? result = serializer.Deserialize(reader) as JiraRss;
             return result ?? throw new InvalidOperationException("Failed to deserialize XML file");
         }
 
@@ -393,11 +397,11 @@ namespace jf_loader.Load
             if (string.IsNullOrWhiteSpace(xmlContent))
                 throw new ArgumentNullException(nameof(xmlContent));
 
-            var serializer = new XmlSerializer(typeof(JiraRss));
+            XmlSerializer serializer = new XmlSerializer(typeof(JiraRss));
             
-            using var reader = new StringReader(xmlContent);
-            
-            var result = serializer.Deserialize(reader) as JiraRss;
+            using StringReader reader = new StringReader(xmlContent);
+
+            JiraRss? result = serializer.Deserialize(reader) as JiraRss;
             return result ?? throw new InvalidOperationException("Failed to deserialize XML content");
         }
 
@@ -413,9 +417,9 @@ namespace jf_loader.Load
             if (xmlStream == null)
                 throw new ArgumentNullException(nameof(xmlStream));
 
-            var serializer = new XmlSerializer(typeof(JiraRss));
-            
-            var result = serializer.Deserialize(xmlStream) as JiraRss;
+            XmlSerializer serializer = new XmlSerializer(typeof(JiraRss));
+
+            JiraRss? result = serializer.Deserialize(xmlStream) as JiraRss;
             return result ?? throw new InvalidOperationException("Failed to deserialize XML stream");
         }
     }

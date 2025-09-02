@@ -11,7 +11,7 @@ internal class JiraCustomField
     /// <summary>
     /// Represents the mapping configuration for a JIRA custom field.
     /// </summary>
-    public record class CustomFieldInfo
+    public record class CustomFieldMappingInfo
     {
         public required string FieldId { get; init; }
         public required string FieldKey { get; init; }
@@ -22,7 +22,7 @@ internal class JiraCustomField
     /// <summary>
     /// Custom field mapping configuration - matches TypeScript version
     /// </summary>
-    internal static readonly Dictionary<string, CustomFieldInfo> DbFieldToCustomFieldName = new()
+    internal static readonly Dictionary<string, CustomFieldMappingInfo> CustomFieldMappings = new()
     {
         ["specification"] = new()
         {
