@@ -2,7 +2,7 @@
   "profiles": {
     "jf-loader": {
       "commandName": "Project",
-      "commandLineArgs": "load"
+      "commandLineArgs": "load --drop-tables true"
     }
   }
 }

@@ -1,5 +1,6 @@
 ﻿using System.CommandLine;
 using System.CommandLine.Parsing;
+using jf_loader.Load;
 
 namespace jf_loader;
 
@@ -35,21 +36,27 @@ internal class Program
         return _retVal;
     }
 
-    private static void LoadCommandHandler(ParseResult pr)
+    private static async void LoadCommandHandler(ParseResult pr)
     {
         if (pr.CommandResult.Command is not CliLoadCommand lc)
         {
             Console.WriteLine("Incorrect mapping from command to command handler!");
+            _retVal = 1;
             return;
         }
 
         CliConfig config = new(lc.CommandCliOptions, pr);
 
-        Console.WriteLine("load command invoked");
-        Console.WriteLine($"  --db-path: {config.DbPath}");
-        Console.WriteLine($"  --jira-xml-dir: {config.JiraXmlDir}");
-
-        // set our program return value
-        _retVal = 0;
+        try
+        {
+            JiraXmlToSql jiraXmlToSql = new(config);
+            await jiraXmlToSql.ProcessAsync();
+            _retVal = 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing JIRA XML files: {ex.Message}");
+            _retVal = ex.HResult;
+        }
     }
 }

@@ -27,12 +27,22 @@ public record class CliOptions
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => "bulk",
     };
+
+    public Option<bool> LoadDropTables { get; set; } = new Option<bool>(
+        "--drop-tables")
+    {
+        Description = "Drop existing tables before loading data.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => false,
+    };
 }
 
 public record class CliConfig
 {
     public required string DbPath { get; init; }
     public required string JiraXmlDir { get; init; }
+
+    public required bool DropTables { get; init; }
 
     public CliConfig() { }
 
@@ -62,6 +72,9 @@ public record class CliConfig
         }
 
         JiraXmlDir = jiraXmlDir;
+
+        // load options that do not require extra processing
+        DropTables = pr.GetValue(opt.LoadDropTables);
     }
 }
 
@@ -75,5 +88,6 @@ public class CliLoadCommand : Command
         // Add options defined in CliOptions
         this.Add(_cliOptions.DbPath);
         this.Add(_cliOptions.JiraXmlDir);
+        this.Add(_cliOptions.LoadDropTables);
     }
 }

@@ -8,7 +8,7 @@ public record class IssueRecord
     public required int Id { get; init; }
     public required string Key { get; init; }
     public required string? Title { get; init; }
-    public required string? Link { get; init; }
+    public required string? IssueUrl { get; init; }
     public required string? ProjectId { get; init; }
     public required string? ProjectKey { get; init; }
     public required string? Description { get; init; }
@@ -54,9 +54,23 @@ public record class IssueRecord
 public record class CommentRecord
 {
     public required int Id { get; init; }
+    public required int CommentId { get; init; }
     public required int IssueId { get; init; }
     public required string IssueKey { get; init; }
-    public required string? Author { get; init; }
-    public required DateTime? CreatedAt { get; init; }
-    public required string? Body { get; init; }
+    public required string Author { get; init; }
+    public required DateTime CreatedAt { get; init; }
+    public required string Body { get; init; }
+}
+
+/// <summary>
+/// A JIRA Custom Field record, as represented in the database.
+/// </summary>
+public record class CustomFieldRecord
+{
+    public int Id { get; init; }
+    public required string IssueKey { get; init; }
+    public required string? FieldId { get; init; }
+    public required string? FieldKey { get; init; }
+    public required string? FieldName { get; init; }
+    public required string? FieldValue { get; init; }
 }
