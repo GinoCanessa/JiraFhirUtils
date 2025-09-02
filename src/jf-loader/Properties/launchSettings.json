@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "jf-loader": {
+      "commandName": "Project",
+      "commandLineArgs": "load"
+    }
+  }
+}
