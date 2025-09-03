@@ -17,11 +17,23 @@ public static class XmlToDatabaseExtensions
     /// <returns>An IssueRecord with mapped properties</returns>
     public static IssueRecord ToIssueRecord(this JiraItem item, string issueKey)
     {
+        string title = item.Title;
+        if (title.StartsWith('[') &&
+            !string.IsNullOrEmpty(item.Project.Key) &&
+            title.StartsWith("[" + item.Project.Key))
+        {
+            int closingBracketIndex = title.IndexOf(']');
+            if (closingBracketIndex > 0)
+            {
+                title = title[(closingBracketIndex + 1)..].Trim();
+            }
+        }
+
         return new IssueRecord
         {
             Id = item.Key.Id,
             Key = issueKey,
-            Title = item.Title,
+            Title = title,
             IssueUrl = item.Link,
             ProjectId = item.Project.Id,
             ProjectKey = item.Project.Key,

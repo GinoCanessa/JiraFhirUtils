@@ -50,8 +50,8 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
             SourceText.From(GeneratorAttributes.JfAttributes, Encoding.UTF8)));
 
         context.RegisterPostInitializationOutput(ctx => ctx.AddSource(
-            "JfJsonUtils.g.cs",
-            SourceText.From(GeneratorJsonUtils.JfJsonUtils, Encoding.UTF8)));
+            "JfSQLiteUtils.g.cs",
+            SourceText.From(GeneratorJsonUtils.JfSQLiteUtils, Encoding.UTF8)));
 
         IncrementalValuesProvider<ClassDeclarationSyntax> cDeclarations = context.SyntaxProvider
             .CreateSyntaxProvider(
@@ -170,6 +170,47 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                 context,
                 JfGenCategory.Class);
         }
+
+        foreach (ClassDeclarationSyntax classSyntax in classes.Where(c => c.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == GeneratorAttributes._jfSQLiteFtsTable))))
+        {
+            // Converting the class to a semantic model to access much more meaningful data.
+            SemanticModel model = compilation.GetSemanticModel(classSyntax.SyntaxTree);
+
+            // Parse to declared symbol, so you can access each part of code separately,
+            // such as interfaces, methods, members, contructor parameters etc.
+            ISymbol? symbol = model.GetDeclaredSymbol(classSyntax);
+
+            if (symbol == null)
+            {
+                continue;
+            }
+
+            List<MemberDeclarationSyntax> members = [];
+
+            string? btn = ((INamedTypeSymbol)symbol).BaseType?.Name;
+            while (btn != null)
+            {
+                ClassDeclarationSyntax? btcs = classLookup[btn].FirstOrDefault();
+                if (btcs == null)
+                {
+                    break;
+                }
+
+                members.AddRange(btcs.Members);
+                btn = compilation.GetSemanticModel(btcs.SyntaxTree).GetDeclaredSymbol(btcs) is INamedTypeSymbol ints
+                    ? ints.BaseType?.Name
+                    : null;
+            }
+
+            members.AddRange(classSyntax.Members);
+
+            executeForFts(
+                compilation,
+                symbol,
+                members,
+                context,
+                JfGenCategory.Class);
+        }
     }
 
     public void Execute(
@@ -212,6 +253,46 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
             members.AddRange(recordSyntax.Members);
 
             execute(
+                compilation,
+                symbol,
+                members,
+                context,
+                JfGenCategory.Record);
+        }
+
+        foreach (RecordDeclarationSyntax recordSyntax in records.Where(c => c.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == GeneratorAttributes._jfSQLiteFtsTable))))
+        {
+            // Converting the record to a semantic model to access much more meaningful data.
+            SemanticModel model = compilation.GetSemanticModel(recordSyntax.SyntaxTree);
+
+            // Parse to declared symbol, so you can access each part of code separately,
+            // such as interfaces, methods, members, contructor parameters etc.
+            ISymbol? symbol = model.GetDeclaredSymbol(recordSyntax);
+
+            if (symbol == null)
+            {
+                continue;
+            }
+
+            List<MemberDeclarationSyntax> members = [];
+            string? btn = ((INamedTypeSymbol)symbol).BaseType?.Name;
+            while (btn != null)
+            {
+                RecordDeclarationSyntax? btcs = recordLookup[btn].FirstOrDefault();
+                if (btcs == null)
+                {
+                    break;
+                }
+
+                members.AddRange(btcs.Members);
+                btn = compilation.GetSemanticModel(btcs.SyntaxTree).GetDeclaredSymbol(btcs) is INamedTypeSymbol ints
+                    ? ints.BaseType?.Name
+                    : null;
+            }
+
+            members.AddRange(recordSyntax.Members);
+
+            executeForFts(
                 compilation,
                 symbol,
                 members,
@@ -853,6 +934,7 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                                 using (IDbTransaction transaction = dbConnection.BeginTransaction())
                                 {
                                     IDbCommand command = dbConnection.CreateCommand();
+                                    command.Transaction = transaction;
                                     command.CommandText = $"""
                                         {insertLiteral} INTO {dbTableName} (
                                             {{{string.Join(_comma_line_6, tableColInfo.Select(p => p.name))}}}
@@ -878,6 +960,7 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                                 using (IDbTransaction transaction = dbConnection.BeginTransaction())
                                 {
                                     IDbCommand command = dbConnection.CreateCommand();
+                                    command.Transaction = transaction;
                                     command.CommandText = $"""
                                         {insertLiteral} INTO {dbTableName} (
                                             {{{string.Join(_comma_line_6, tableColInfo.Where(p => p.isIdentity == false).Select(p => p.name))}}}
@@ -1323,22 +1406,22 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                     //{
                     //    if (rec.isNullable)
                     //    {
-                    //        yield return $"    {rec.name}Param.Value = JfJsonUtils.SerializeArrayForDb({rec.name}, true);";
+                    //        yield return $"    {rec.name}Param.Value = JfSQLiteUtils.SerializeArrayForDb({rec.name}, true);";
                     //    }
                     //    else
                     //    {
-                    //        yield return $"    {rec.name}Param.Value = JfJsonUtils.SerializeArrayForDb({rec.name}, false);";
+                    //        yield return $"    {rec.name}Param.Value = JfSQLiteUtils.SerializeArrayForDb({rec.name}, false);";
                     //    }
                     //}
                     //else
                     //{
                         if (rec.isNullable)
                         {
-                            yield return $"    {rec.name}Param.Value = JfJsonUtils.TrySerializeForDb({rec.name}, out dbJson) ? dbJson : DBNull.Value;";
+                            yield return $"    {rec.name}Param.Value = JfSQLiteUtils.TrySerializeForDb({rec.name}, out dbJson) ? dbJson : DBNull.Value;";
                         }
                         else
                         {
-                            yield return $"    {rec.name}Param.Value = JfJsonUtils.TrySerializeForDb({rec.name}, out dbJson) ? dbJson : string.Empty;";
+                            yield return $"    {rec.name}Param.Value = JfSQLiteUtils.TrySerializeForDb({rec.name}, out dbJson) ? dbJson : string.Empty;";
                         }
                     //}
                 }
@@ -1417,12 +1500,12 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             //yield return $"{rec.name}Param.Value = (value.{rec.name} == null) ? DBNull.Value : JsonSerializer.Serialize(value.{rec.name});";
                             //if (rec.isArray)
                             //{
-                            //    yield return $"{rec.name}Param.Value = ((value.{rec.name} == null) || !value.{rec.name}.Any()) ? DBNull.Value : JfJsonUtils.SerializeArrayForDb(value.{rec.name}, true);";
+                            //    yield return $"{rec.name}Param.Value = ((value.{rec.name} == null) || !value.{rec.name}.Any()) ? DBNull.Value : JfSQLiteUtils.SerializeArrayForDb(value.{rec.name}, true);";
                             //}
                             //else
                             //{
-                                //yield return $"{rec.name}Param.Value = (value.{rec.name} == null) ? DBNull.Value : (JfJsonUtils.SerializeForDb(value.{rec.name}, true) ?? DBNull.Value);";
-                                yield return $"{rec.name}Param.Value = JfJsonUtils.TrySerializeForDb(value.{rec.name}, out dbJson) ? dbJson : DBNull.Value;";
+                                //yield return $"{rec.name}Param.Value = (value.{rec.name} == null) ? DBNull.Value : (JfSQLiteUtils.SerializeForDb(value.{rec.name}, true) ?? DBNull.Value);";
+                                yield return $"{rec.name}Param.Value = JfSQLiteUtils.TrySerializeForDb(value.{rec.name}, out dbJson) ? dbJson : DBNull.Value;";
                             //}
 
                         }
@@ -1443,12 +1526,12 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
 
                             //if (rec.isArray)
                             //{
-                            //    yield return $"{rec.name}Param.Value = JfJsonUtils.SerializeArrayForDb(value.{rec.name}, false);";
+                            //    yield return $"{rec.name}Param.Value = JfSQLiteUtils.SerializeArrayForDb(value.{rec.name}, false);";
                             //}
                             //else
                             //{
-                                //yield return $"{rec.name}Param.Value = JfJsonUtils.SerializeForDb(value.{rec.name}, false);";
-                                yield return $"{rec.name}Param.Value = JfJsonUtils.TrySerializeForDb(value.{rec.name}, out dbJson) ? dbJson : string.Empty;";
+                                //yield return $"{rec.name}Param.Value = JfSQLiteUtils.SerializeForDb(value.{rec.name}, false);";
+                                yield return $"{rec.name}Param.Value = JfSQLiteUtils.TrySerializeForDb(value.{rec.name}, out dbJson) ? dbJson : string.Empty;";
                             //}
                         }
                         else
@@ -1523,6 +1606,549 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
         }
     }
 
+    private void executeForFts(
+        Compilation compilation,
+        ISymbol symbol,
+        List<MemberDeclarationSyntax> members,
+        SourceProductionContext context,
+        JfGenCategory genCategory)
+    {
+        string className = symbol.Name;
+        string? classNamespace = symbol.ContainingNamespace?.ToDisplayString();
+        string? classAssembly = symbol.ContainingAssembly?.Name;
+
+        ILookup<string?, AttributeData> symbolAttributeLookup = symbol.GetAttributes().ToLookup(a => a.AttributeClass?.Name);
+
+        List<TypedConstant> ftsTableArgs = symbolAttributeLookup.Contains(GeneratorAttributes._jfSQLiteFtsTable)
+            ? symbolAttributeLookup[GeneratorAttributes._jfSQLiteFtsTable].First().ConstructorArguments.ToList()
+            : [];
+
+        string sourceTableName = ftsTableArgs.Count > 0
+            ? ftsTableArgs[0].Value?.ToString() ?? className
+            : className;
+
+        string tableName = ftsTableArgs.Count > 1
+            ? ftsTableArgs[1].Value?.ToString() ?? (className + "_fts")
+            : (className + "_fts");
+
+        List<string> createColLines = [];
+        List<string> createFKLines = [];
+        List<TableColInfoRec> tableColInfo = [];
+
+        foreach (MemberDeclarationSyntax member in members)
+        {
+            // only process properties
+            if (member is not PropertyDeclarationSyntax pds)
+            {
+                continue;
+            }
+
+            SemanticModel pModel = compilation.GetSemanticModel(pds.SyntaxTree);
+
+            // check for ignore property
+            if (pds.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == GeneratorAttributes._jfSQLiteIgnore)))
+            {
+                continue;
+            }
+
+            Type memberType = pds.GetType();
+            string propName = pds.Identifier.ToString();
+
+            TypeInfo propTypeInfo = pModel.GetTypeInfo(pds.Type);
+            string propTypeName = pds.Type.ToString();
+            INamedTypeSymbol? namedTypeSymbol = propTypeInfo.Type is INamedTypeSymbol ints ? ints : null;
+
+            bool nullable = propTypeName.EndsWith("?") || (namedTypeSymbol?.NullableAnnotation == NullableAnnotation.Annotated);
+            if (nullable)
+            {
+                propTypeName = propTypeName.Substring(0, propTypeName.Length - 1);
+            }
+
+            bool isUnique = pds.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == GeneratorAttributes._jfSQLiteUnique));
+            bool isUnindexed = pds.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == GeneratorAttributes._jfSQLiteFtsUnindexed));
+
+            // check for any kind of non-scalar type
+            bool memberIsNonScalar = memberType.IsArray || (memberType.IsGenericType && typeof(IEnumerable<object>).IsAssignableFrom(memberType));
+
+            string? jsonTypeName = null;
+            string? enumTypeName = null;
+            bool memberIsEnum = false;
+
+            if ((namedTypeSymbol != null) &&
+                (
+                    (namedTypeSymbol.TypeKind == TypeKind.Enum) ||
+                    ((namedTypeSymbol.TypeArguments.Length != 0) && (namedTypeSymbol.TypeArguments[0].TypeKind == TypeKind.Enum))
+                ))
+            {
+                memberIsEnum = true;
+
+                // grab the enum type name
+                if (namedTypeSymbol.TypeKind == TypeKind.Enum)
+                {
+                    if (namedTypeSymbol.ContainingType == null)
+                    {
+                        enumTypeName = $"{namedTypeSymbol.ContainingNamespace}.{namedTypeSymbol.Name}";
+                    }
+                    else
+                    {
+                        enumTypeName = $"{namedTypeSymbol.ContainingType.ContainingNamespace}.{namedTypeSymbol.ContainingType.Name}.{namedTypeSymbol.Name}";
+                    }
+                }
+                else if (namedTypeSymbol.TypeArguments.Length != 0)
+                {
+                    if (namedTypeSymbol.TypeArguments[0].ContainingType == null)
+                    {
+                        enumTypeName = $"{namedTypeSymbol.TypeArguments[0].ContainingNamespace}.{namedTypeSymbol.TypeArguments[0].Name}";
+                    }
+                    else
+                    {
+                        enumTypeName = $"{namedTypeSymbol.TypeArguments[0].ContainingType.ContainingNamespace}.{namedTypeSymbol.TypeArguments[0].ContainingType.Name}.{namedTypeSymbol.TypeArguments[0].Name}";
+                    }
+                }
+                else
+                {
+                    enumTypeName = namedTypeSymbol.Name;
+                }
+            }
+            else if (namedTypeSymbol != null)
+            {
+                if (namedTypeSymbol.TypeArguments.Length != 0)
+                {
+                    if (namedTypeSymbol.Name.Contains("List") ||
+                        namedTypeSymbol.Name.Contains("Enumerable"))
+                    {
+                        memberIsNonScalar = true;
+                        if (namedTypeSymbol.TypeArguments[0].ContainingType == null)
+                        {
+                            jsonTypeName = $"{namedTypeSymbol.TypeArguments[0].ContainingNamespace}.{namedTypeSymbol.TypeArguments[0].Name}";
+                        }
+                        else
+                        {
+                            jsonTypeName = $"{namedTypeSymbol.TypeArguments[0].ContainingType.ContainingNamespace}.{namedTypeSymbol.TypeArguments[0].ContainingType.Name}.{namedTypeSymbol.TypeArguments[0].Name}";
+                        }
+                    }
+                    else
+                    {
+                        if (namedTypeSymbol.TypeArguments[0].ContainingType == null)
+                        {
+                            jsonTypeName = $"{namedTypeSymbol.TypeArguments[0].ContainingNamespace}.{namedTypeSymbol.TypeArguments[0].Name}";
+                        }
+                        else
+                        {
+                            jsonTypeName = $"{namedTypeSymbol.TypeArguments[0].ContainingType.ContainingNamespace}.{namedTypeSymbol.TypeArguments[0].ContainingType.Name}.{namedTypeSymbol.TypeArguments[0].Name}";
+                        }
+                    }
+                }
+                else
+                {
+                    if (namedTypeSymbol.ContainingType == null)
+                    {
+                        jsonTypeName = $"{namedTypeSymbol.ContainingNamespace}.{namedTypeSymbol.Name}";
+                    }
+                    else
+                    {
+                        jsonTypeName = $"{namedTypeSymbol.ContainingType.ContainingNamespace}.{namedTypeSymbol.ContainingType.Name}.{namedTypeSymbol.Name}";
+                    }
+                }
+            }
+
+            bool useJson = !memberIsEnum && !_sqliteTypeMap.ContainsKey(propTypeName);
+
+            // add our column line
+            if (isUnindexed)
+            {
+                createColLines.Add(pds.Identifier.ToString() + " UNINDEXED");
+            }
+            else
+            {
+                createColLines.Add(pds.Identifier.ToString());
+            }
+
+            // create the select retrieval pair
+            if (nullable && _sqliteNullableReadDirectives.TryGetValue(propTypeName, out string? readFormat))
+            {
+                tableColInfo.Add(new(
+                    propName,
+                    propTypeName,
+                    string.Format(readFormat.Remove(0, 6), pds.Identifier.ToString(), "reader", tableColInfo.Count),
+                    string.Format(readFormat, pds.Identifier.ToString(), "reader", tableColInfo.Count),
+                    false,
+                    false,
+                    nullable,
+                    memberIsEnum,
+                    useJson,
+                    memberIsNonScalar,
+                    isUnique));
+            }
+            else if (!nullable && _sqliteReadDirectives.TryGetValue(propTypeName, out readFormat))
+            {
+                tableColInfo.Add(new(
+                    propName,
+                    propTypeName,
+                    string.Format(readFormat.Remove(0, 6), pds.Identifier.ToString(), "reader", tableColInfo.Count),
+                    string.Format(readFormat, pds.Identifier.ToString(), "reader", tableColInfo.Count),
+                    false,
+                    false,
+                    nullable,
+                    memberIsEnum,
+                    useJson,
+                    memberIsNonScalar,
+                    isUnique));
+            }
+            else if (memberIsEnum)
+            {
+                //// build the reader directive for the enum type
+                //string ef = $"Enum.TryParse(reader.GetString({tableColInfo.Count}), out {propName});";
+
+                tableColInfo.Add(new(
+                    propName,
+                    propTypeName,
+                    nullable
+                        ? string.Format(_sqliteNullableReadDirectives["enum"].Remove(0, 6), pds.Identifier.ToString(), "reader", tableColInfo.Count, enumTypeName)
+                        : string.Format(_sqliteReadDirectives["enum"].Remove(0, 6), pds.Identifier.ToString(), "reader", tableColInfo.Count, enumTypeName),
+                    nullable
+                        ? string.Format(_sqliteNullableReadDirectives["enum"], pds.Identifier.ToString(), "reader", tableColInfo.Count, enumTypeName)
+                        : string.Format(_sqliteReadDirectives["enum"], pds.Identifier.ToString(), "reader", tableColInfo.Count, enumTypeName),
+                    false,
+                    false,
+                    nullable,
+                    memberIsEnum,
+                    useJson,
+                    memberIsNonScalar,
+                    isUnique));
+            }
+            else if (memberIsNonScalar)
+            {
+                tableColInfo.Add(new(
+                    pds.Identifier.ToString(),
+                    propTypeName,
+                    nullable
+                        ? string.Format(_sqliteNullableReadDirectives["JSON[]"].Remove(0, 6), pds.Identifier.ToString(), "reader", tableColInfo.Count, jsonTypeName)
+                        : string.Format(_sqliteReadDirectives["JSON[]"].Remove(0, 6), pds.Identifier.ToString(), "reader", tableColInfo.Count, jsonTypeName),
+                    nullable
+                        ? string.Format(_sqliteNullableReadDirectives["JSON[]"], pds.Identifier.ToString(), "reader", tableColInfo.Count, jsonTypeName)
+                        : string.Format(_sqliteReadDirectives["JSON[]"], pds.Identifier.ToString(), "reader", tableColInfo.Count, jsonTypeName),
+                    false,
+                    false,
+                    nullable,
+                    memberIsEnum,
+                    useJson,
+                    memberIsNonScalar,
+                    isUnique));
+            }
+            else
+            {
+                tableColInfo.Add(new(
+                    pds.Identifier.ToString(),
+                    propTypeName,
+                    nullable
+                        ? string.Format(_sqliteNullableReadDirectives["JSON"].Remove(0, 6), pds.Identifier.ToString(), "reader", tableColInfo.Count, jsonTypeName)
+                        : string.Format(_sqliteReadDirectives["JSON"].Remove(0, 6), pds.Identifier.ToString(), "reader", tableColInfo.Count, jsonTypeName),
+                    nullable
+                        ? string.Format(_sqliteNullableReadDirectives["JSON"], pds.Identifier.ToString(), "reader", tableColInfo.Count, jsonTypeName)
+                        : string.Format(_sqliteReadDirectives["JSON"], pds.Identifier.ToString(), "reader", tableColInfo.Count, jsonTypeName),
+                    false,
+                    false,
+                    nullable,
+                    memberIsEnum,
+                    useJson,
+                    memberIsNonScalar,
+                    isUnique));
+            }
+        }
+
+        context.AddSource(
+            $"{className}{"SQLite"}.g.cs",
+            SourceText.From($$$""""
+                    //------------------------------------------------------------------------------
+                    // <auto-generated>
+                    //     This code was generated by a tool.
+                    //
+                    //     Changes to this file may cause incorrect behavior and will be lost if
+                    //     the code is regenerated.
+                    // </auto-generated>
+                    //------------------------------------------------------------------------------
+
+                    #nullable enable
+
+                    using System.Collections.Generic;
+                    using System.Data;
+                    using System.Text;
+                    using System.Text.Json;
+                    using JiraFhirUtils.SQLiteGenerator;
+                
+                    namespace {{{classNamespace}}};
+                
+                    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
+                    public partial {{{decForGenCategory(genCategory)}}} {{{className}}}
+                    {
+                        public static string DefaultTableName => "{{{tableName}}}";
+                        public static string SourceTableName => "{{{sourceTableName}}}";
+                    
+                        public static bool CreateTable(IDbConnection dbConnection, string? dbTableName = null)
+                        {
+                            dbTableName ??= "{{{tableName}}}";
+
+                            IDbCommand command = dbConnection.CreateCommand();
+                            command.CommandText = $"""
+                                CREATE VIRTUAL TABLE IF NOT EXISTS {dbTableName} using fts5 (
+                                    {{{string.Join(_comma_line_4, createColLines)}}}
+                                )
+                                """;
+
+                            command.ExecuteNonQuery();
+                    
+                            return true;
+                        }
+
+                        public static bool DropTable(IDbConnection dbConnection, string? dbTableName = null)
+                        {
+                            dbTableName ??= "{{{tableName}}}";
+                    
+                            IDbCommand command = dbConnection.CreateCommand();
+                            command.CommandText = $"DROP TABLE IF EXISTS {dbTableName}";
+                    
+                            command.ExecuteNonQuery();
+                    
+                            return true;
+                        }
+
+                        public static int Populate(
+                            IDbConnection dbConnection,
+                            string? dbTableName = null,
+                            string? sourceTableName = null,
+                            bool sanitizeText = false)
+                        {
+                            dbTableName ??= "{{{tableName}}}";
+                            sourceTableName ??= "{{{sourceTableName}}}";
+                            int rowsAffected = 0;
+
+                            if (sanitizeText == false)
+                            {
+                                IDbCommand popCommand = dbConnection.CreateCommand();
+                                popCommand.CommandText = $"""
+                                    INSERT INTO {dbTableName} ({{{string.Join(", ", tableColInfo.Select(c => c.name))}}})
+                                    SELECT {{{string.Join(", ", tableColInfo.Select(c => c.name))}}} FROM {sourceTableName}
+                                    """;
+                                rowsAffected = popCommand.ExecuteNonQuery();
+
+                                return rowsAffected;
+                            }
+
+                            IDbCommand readCommand = dbConnection.CreateCommand();
+                            readCommand.CommandText = $"""
+                                SELECT {{{string.Join(", ", tableColInfo.Select(c => c.name))}}} FROM {sourceTableName}
+                                """;
+
+                            using (IDataReader reader = readCommand.ExecuteReader())
+                            using (IDbTransaction transaction = dbConnection.BeginTransaction())
+                            {
+                                IDbCommand command = dbConnection.CreateCommand();
+                                command.CommandText = $"""
+                                    INSERT INTO {dbTableName} ({{{string.Join(", ", tableColInfo.Select(c => c.name))}}})
+                                    VALUES ({{{string.Join(", ", tableColInfo.Select(c => $"${c.name}"))}}})
+                                    """;
+
+                                {{{string.Join(_line_3, getPopulateCleanLines(addValue: false))}}}
+                                        
+                                command.Prepare();
+                                
+                                while (reader.Read())
+                                {
+                                    {{{string.Join(_line_4, getPopulateCleanLines(addParam: false))}}}
+
+                                    int ra = command.ExecuteNonQuery();
+                                    if (ra == 0) throw new Exception("Failed to insert cleaned FTS value!");
+                                    rowsAffected += ra;
+                                }
+
+                                transaction.Commit();
+                            }
+
+                            return rowsAffected;
+                        }
+
+                        public static List<{{{className}}}> Select(
+                            IDbConnection dbConnection,
+                            List<string> matchTerms,
+                            string? dbTableName = null,
+                            string[]? orderByProperties = null,
+                            string? orderByDirection = null)
+                        {
+                            dbTableName ??= "{{{tableName}}}";
+
+                            List<{{{className}}}> results = new();
+
+                            IDbCommand command = dbConnection.CreateCommand();
+                            command.CommandText = $"SELECT {{{string.Join(", ", tableColInfo.Select(p => p.name))}}} FROM {dbTableName}";
+                    
+                            bool addedCondition = false;
+                            int index = 0;
+                            foreach (string mt in matchTerms)
+                            {
+                                if (!string.IsNullOrWhiteSpace(mt))
+                                {
+                                    command.CommandText += (addedCondition ? " AND " : " WHERE ") + $" {dbTableName} MATCH $matchTerm{index}";
+                                    addedCondition = true;
+                                    IDbDataParameter matchParam = command.CreateParameter();
+                                    matchParam.ParameterName = $"$matchTerm{index}";
+                                    matchParam.Value = mt;
+                                    command.Parameters.Add(matchParam);
+                                    index++;
+                                }
+                            }
+                    
+                            if ((orderByProperties != null) && (orderByProperties.Length > 0))
+                            {
+                                command.CommandText += $" ORDER BY {string.Join(", ", orderByProperties)}";
+                                if (orderByDirection?.StartsWith("d", StringComparison.OrdinalIgnoreCase) == true)
+                                {
+                                    command.CommandText += $" DESC";
+                                }
+                                else
+                                {
+                                    command.CommandText += $" ASC";
+                                }
+                            }
+                    
+                            using (IDataReader reader = command.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                {
+                                    results.Add(new()
+                                    {
+                                        {{{string.Join(_comma_line_5, tableColInfo.Select(p => p.readerDirective))}}}
+                                    });
+                                }
+                            }
+
+                            return results;
+                        }
+
+                        public static int SelectCount(
+                            IDbConnection dbConnection, 
+                            List<string> matchTerms,
+                            string? dbTableName = null)
+                        {
+                            dbTableName ??= "{{{tableName}}}";
+                    
+                            IDbCommand command = dbConnection.CreateCommand();
+                            command.CommandText = $"SELECT COUNT(*) FROM {dbTableName}";
+                    
+                            bool addedCondition = false;
+                            int index = 0;
+                            foreach (string mt in matchTerms)
+                            {
+                                if (!string.IsNullOrWhiteSpace(mt))
+                                {
+                                    command.CommandText += (addedCondition ? " AND " : " WHERE ") + $" {dbTableName} MATCH $matchTerm{index}";
+                                    addedCondition = true;
+                                    IDbDataParameter matchParam = command.CreateParameter();
+                                    matchParam.ParameterName = $"$matchTerm{index}";
+                                    matchParam.Value = mt;
+                                    command.Parameters.Add(matchParam);
+                                    index++;
+                                }
+                            }
+                    
+                            object? result = command.ExecuteScalar();
+                            if (result is int value)
+                            {
+                                return value;
+                            }
+                            else if (result is long l)
+                            {
+                                return Convert.ToInt32(l);
+                            }
+
+                            return -1;
+                        }
+                    }
+
+                    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+                    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
+                    public static class {{{className}}}Extensions
+                    {
+                        public static List<{{{className}}}> Select<T>(this IDbConnection dbCon, List<string> matchTerms, string? dbTableName = null, string[]? orderByProperties = null, string? orderByDirection = null)
+                            where T : {{{className}}}
+                        {
+                            return {{{className}}}.Select(dbCon, matchTerms, dbTableName, orderByProperties, orderByDirection);
+                        }
+
+                        public static int SelectCount<T>(this IDbConnection dbCon, List<string> matchTerms, string? dbTableName = null)
+                            where T : {{{className}}}
+                        {
+                            return {{{className}}}.SelectCount(dbCon, matchTerms, dbTableName);
+                        }
+                    }
+
+                    #nullable restore
+                    """"
+            , Encoding.UTF8)
+        );
+
+        return;
+
+        string decForGenCategory(JfGenCategory genCategory) => genCategory switch
+        {
+            JfGenCategory.Class => "class",
+            JfGenCategory.Record => "record class",
+            _ => "class",
+        };
+
+        IEnumerable<string> getPopulateCleanLines(bool addParam = true, bool addValue = true)
+        {
+            foreach ((TableColInfoRec rec, int index) in tableColInfo.Select((p, i) => (p, i)))
+            {
+                if (addParam)
+                {
+                    yield return $"IDbDataParameter {rec.name}Param = command.CreateParameter();";
+                    yield return $"{rec.name}Param.ParameterName = \"${rec.name}\";";
+                }
+
+                int assignmentIndex = rec.readerDirective.IndexOf('=');
+                string assignment = (assignmentIndex == -1)
+                    ? $"{rec.name}Param.Value = {rec.readerDirective}"
+                    : $"{rec.name}Param.Value {rec.readerDirective.Substring(assignmentIndex)}";
+
+                // check for strings we want to sanitize
+                if (rec.propType.StartsWith("string", StringComparison.OrdinalIgnoreCase))
+                {
+                    assignment = (assignmentIndex == -1)
+                        ? $"{rec.name}Param.Value = JfSQLiteUtils.StripHtml({rec.readerDirective})"
+                        : $"{rec.name}Param.Value = JfSQLiteUtils.StripHtml({rec.readerDirective.Substring(assignmentIndex + 2)})";
+                }
+
+                if (addValue)
+                {
+                    // if it's nullable, we need to check for null first
+                    if (rec.isNullable)
+                    {
+                        yield return $"if (reader.IsDBNull({index}))";
+                        yield return "{";
+                        yield return $"    {rec.name}Param.Value = DBNull.Value;";
+                        yield return "}";
+                        yield return "else";
+                        yield return "{";
+                        yield return $"    {assignment};";
+                        yield return "}";
+                    }
+                    else
+                    {
+                        yield return $"{assignment};";
+                    }
+                }
+
+                if (addParam)
+                {
+                    yield return $"command.Parameters.Add({rec.name}Param);";
+                    yield return string.Empty;
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// Gets the SQL type for a given type.
     /// </summary>
@@ -1570,10 +2196,10 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
         { "uint", "(uint){0} = {1}.GetInt32({2})" },
         { "ulong", "(ulong){0} = {1}.GetInt64({2})" },
         { "Uri", "{0} = new Uri({1}.GetString({2}))" },
-        { "JSON", "{0} = JfJsonUtils.ParseFromDb<{3}>({1}.GetString({2})) ?? new {3}()" },
-        //{ "JSON", "{0} = JfJsonUtils.ParseFromDb({1}.GetString({2}), typeof({3})) ?? new {3}()" },
-        { "JSON[]", "{0} = JfJsonUtils.ParseArrayFromDb<{3}>({1}.GetString({2})) ?? new List<{3}>()" },
-        //{ "JSON[]", "{0} = JfJsonUtils.ParseArrayFromDb({1}.GetString({2}), typeof({3})) ?? new List<{3}>()" },
+        { "JSON", "{0} = JfSQLiteUtils.ParseFromDb<{3}>({1}.GetString({2})) ?? new {3}()" },
+        //{ "JSON", "{0} = JfSQLiteUtils.ParseFromDb({1}.GetString({2}), typeof({3})) ?? new {3}()" },
+        { "JSON[]", "{0} = JfSQLiteUtils.ParseArrayFromDb<{3}>({1}.GetString({2})) ?? new List<{3}>()" },
+        //{ "JSON[]", "{0} = JfSQLiteUtils.ParseArrayFromDb({1}.GetString({2}), typeof({3})) ?? new List<{3}>()" },
     };
 
     private static Dictionary<string, string> _sqliteNullableReadDirectives = new()
@@ -1600,10 +2226,10 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
         { "uint", "(uint){0} = {1}.IsDBNull({2}) ? null : {1}.GetInt32({2})" },
         { "ulong", "(ulong){0} = {1}.IsDBNull({2}) ? null : {1}.GetInt64({2})" },
         { "Uri", "{0} = {1}.IsDBNull({2}) ? null : new Uri({1}.GetString({2}))" },
-        { "JSON", "{0} = {1}.IsDBNull({2}) ? null : JfJsonUtils.ParseFromDb<{3}>({1}.GetString({2}))" },
-        //{ "JSON", "{0} = {1}.IsDBNull({2}) ? null : JfJsonUtils.ParseFromDb({1}.GetString({2}), typeof({3}))" },
-        { "JSON[]", "{0} = {1}.IsDBNull({2}) ? null : JfJsonUtils.ParseArrayFromDb<{3}>({1}.GetString({2}))" },
-        //{ "JSON[]", "{0} = {1}.IsDBNull({2}) ? null : JfJsonUtils.ParseArrayFromDb({1}.GetString({2}), typeof({3}))" },
+        { "JSON", "{0} = {1}.IsDBNull({2}) ? null : JfSQLiteUtils.ParseFromDb<{3}>({1}.GetString({2}))" },
+        //{ "JSON", "{0} = {1}.IsDBNull({2}) ? null : JfSQLiteUtils.ParseFromDb({1}.GetString({2}), typeof({3}))" },
+        { "JSON[]", "{0} = {1}.IsDBNull({2}) ? null : JfSQLiteUtils.ParseArrayFromDb<{3}>({1}.GetString({2}))" },
+        //{ "JSON[]", "{0} = {1}.IsDBNull({2}) ? null : JfSQLiteUtils.ParseArrayFromDb({1}.GetString({2}), typeof({3}))" },
     };
 
     // Mapping pulled from https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/types

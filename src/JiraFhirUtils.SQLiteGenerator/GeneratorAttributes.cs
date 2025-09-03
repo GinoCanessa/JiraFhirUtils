@@ -14,6 +14,9 @@ public class GeneratorAttributes
     internal const string _jfSQLiteIgnore = "JfSQLiteIgnore";
     internal const string _jfSQLiteUnique = "JfSQLiteUnique";
 
+    internal const string _jfSQLiteFtsTable = "JfSQLiteFtsTable";
+    internal const string _jfSQLiteFtsUnindexed = "JfSQLiteFtsUnindexed";
+
     internal static HashSet<string> _jfAttributes = [
         _jfSQLiteBaseClass,
         _jfSQLiteTable,
@@ -22,11 +25,14 @@ public class GeneratorAttributes
         _jfSQLiteForeignKey,
         _jfSQLiteIgnore,
         _jfSQLiteUnique,
+        _jfSQLiteFtsTable,
+        _jfSQLiteFtsUnindexed,
         ];
 
     internal static HashSet<string> _jfClassAttributes = [
         _jfSQLiteBaseClass,
         _jfSQLiteTable,
+        _jfSQLiteFtsTable,
         ];
 
 
@@ -103,7 +109,28 @@ public class GeneratorAttributes
                 {
                 }
             }
+
+            [System.AttributeUsage(System.AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
+            public class {{{_jfSQLiteFtsTable}}} : System.Attribute
+            {
+                public string? TableName { get; set; }
+                public string? SourceTableName { get; set; }
+        
+                public {{{_jfSQLiteFtsTable}}}(string sourceTable, string? tableName = null)
+                {
+                    SourceTableName = sourceTable;
+                    TableName = tableName == null ? (sourceTable + "_fts") : tableName;
                 }
+            }
+        
+            [System.AttributeUsage(System.AttributeTargets.Property, Inherited = false, AllowMultiple = true)]
+            public class {{{_jfSQLiteFtsUnindexed}}} : System.Attribute
+            {
+                public {{{_jfSQLiteFtsUnindexed}}}()
+                {
+                }
+            }
+        }
         #nullable restore
         """;
 }

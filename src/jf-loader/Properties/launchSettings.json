@@ -1,8 +1,13 @@
 {
   "profiles": {
-    "jf-loader": {
+    "loader:load": {
       "commandName": "Project",
       "commandLineArgs": "load --drop-tables true"
+    },
+    "loader:fts": {
+      "commandName": "Project",
+      "commandLineArgs": "fts"
     }
+
   }
 }

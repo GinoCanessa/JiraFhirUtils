@@ -22,8 +22,11 @@ internal class Program
             // set the handlers for each command
             switch (name)
             {
-                case "load":
+                case CliLoadCommand.CommandName:
                     cmd.SetAction(LoadCommandHandler);
+                    break;
+                case CliFtsCommand.CommandName:
+                    cmd.SetAction(FtsCommandHandler);
                     break;
             }
 
@@ -57,6 +60,28 @@ internal class Program
         catch (Exception ex)
         {
             Console.WriteLine($"Error processing JIRA XML files: {ex.Message}");
+            _retVal = ex.HResult;
+        }
+    }
+
+    private static async void FtsCommandHandler(ParseResult pr)
+    {
+        if (pr.CommandResult.Command is not CliFtsCommand fc)
+        {
+            Console.WriteLine("Incorrect mapping from command to command handler!");
+            _retVal = 1;
+            return;
+        }
+        CliConfig config = new(fc.CommandCliOptions, pr);
+        try
+        {
+            Process.JiraFts fts = new(config);
+            await fts.ProcessAsync();
+            _retVal = 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating FTS tables: {ex.Message}");
             _retVal = ex.HResult;
         }
     }

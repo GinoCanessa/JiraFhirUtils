@@ -9,7 +9,8 @@ public record class CliOptions
 {
     public static readonly List<(string, Command)> Commands = new()
     {
-        ( "load", new CliLoadCommand() ),
+        ( CliLoadCommand.CommandName, new CliLoadCommand() ),
+        ( CliFtsCommand.CommandName, new CliFtsCommand() ),
     };
 
     public Option<string?> DbPath { get; set; } = new Option<string?>("--db-path")
@@ -89,15 +90,31 @@ public record class CliConfig
 
 public class CliLoadCommand : Command
 {
+    public const string CommandName = "load";
+
     private CliOptions _cliOptions = new();
     public CliOptions CommandCliOptions => _cliOptions;
 
-    public CliLoadCommand() : base("load", "Load JIRA issues from XML export files into the database.")
+    public CliLoadCommand() : base(CommandName, "Load JIRA issues from XML export files into the database.")
     {
         // Add options defined in CliOptions
         this.Add(_cliOptions.DbPath);
         this.Add(_cliOptions.JiraXmlDir);
         this.Add(_cliOptions.LoadDropTables);
         this.Add(_cliOptions.KeepCustomFieldSource);
+    }
+}
+
+public class CliFtsCommand : Command
+{
+    public const string CommandName = "fts";
+
+    private CliOptions _cliOptions = new();
+    public CliOptions CommandCliOptions => _cliOptions;
+
+    public CliFtsCommand() : base(CommandName, "Create full-text index tables in the database, using FTS5.")
+    {
+        // Add options defined in CliOptions
+        this.Add(_cliOptions.DbPath);
     }
 }
