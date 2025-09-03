@@ -250,7 +250,12 @@ internal class JiraXmlToSql
             foreach (JiraComment comment in item.Comments?.CommentList ?? [])
             {
                 // Convert to database record using extension method
-                commentRecords.Add(comment.ToCommentRecord(issueRecord));
+                CommentRecord commentRec = comment.ToCommentRecord(issueRecord);
+                if (string.IsNullOrEmpty(commentRec.Body))
+                {
+                    continue;
+                }
+                commentRecords.Add(commentRec);
             }
         }
 

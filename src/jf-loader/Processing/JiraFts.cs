@@ -2,11 +2,12 @@
 using Microsoft.Data.Sqlite;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace jf_loader.Process;
+namespace jf_loader.Processing;
 
 internal class JiraFts
 {
@@ -38,5 +39,17 @@ internal class JiraFts
         CommentFtsRecord.CreateTable(connection);
         count = CommentFtsRecord.Populate(connection, sanitizeText: true);
         Console.WriteLine($"  Indexed {count} comments.");
+
+        postProcess(connection);
+    }
+
+    private void postProcess(SqliteConnection connection)
+    {
+        {
+            // clean the comments table for comments with no body text
+            IDbCommand command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM comments WHERE Body IS NULL OR Body = '';";
+            command.ExecuteNonQuery();
+        }
     }
 }

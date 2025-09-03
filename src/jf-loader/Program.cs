@@ -75,7 +75,7 @@ internal class Program
         CliConfig config = new(fc.CommandCliOptions, pr);
         try
         {
-            Process.JiraFts fts = new(config);
+            Processing.JiraFts fts = new(config);
             await fts.ProcessAsync();
             _retVal = 0;
         }
