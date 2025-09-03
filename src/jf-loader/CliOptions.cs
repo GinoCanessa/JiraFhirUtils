@@ -35,14 +35,22 @@ public record class CliOptions
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => false,
     };
+
+    public Option<bool> KeepCustomFieldSource { get; set; } = new Option<bool>(
+        "--keep-custom-field-source")
+    {
+        Description = "Keep the source table for custom fields in the database.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => false,
+    };
 }
 
 public record class CliConfig
 {
     public required string DbPath { get; init; }
     public required string JiraXmlDir { get; init; }
-
     public required bool DropTables { get; init; }
+    public required bool KeepCustomFieldSource { get; init; }
 
     public CliConfig() { }
 
@@ -75,6 +83,7 @@ public record class CliConfig
 
         // load options that do not require extra processing
         DropTables = pr.GetValue(opt.LoadDropTables);
+        KeepCustomFieldSource = pr.GetValue(opt.KeepCustomFieldSource);
     }
 }
 
@@ -89,5 +98,6 @@ public class CliLoadCommand : Command
         this.Add(_cliOptions.DbPath);
         this.Add(_cliOptions.JiraXmlDir);
         this.Add(_cliOptions.LoadDropTables);
+        this.Add(_cliOptions.KeepCustomFieldSource);
     }
 }

@@ -21,28 +21,25 @@ public static class XmlToDatabaseExtensions
         {
             Id = item.Key.Id,
             Key = issueKey,
-            Title = !string.IsNullOrWhiteSpace(item.Title) ? item.Title : null,
-            IssueUrl = !string.IsNullOrWhiteSpace(item.Link) ? item.Link : null,
-            ProjectId = item.Project.Id != 0 ? item.Project.Id.ToString() : null,
-            ProjectKey = !string.IsNullOrWhiteSpace(item.Project.Key) ? item.Project.Key : null,
-            Description = !string.IsNullOrWhiteSpace(item.Description) ? item.Description : null,
+            Title = item.Title,
+            IssueUrl = item.Link,
+            ProjectId = item.Project.Id,
+            ProjectKey = item.Project.Key,
+            Description = item.Description,
             Summary = !string.IsNullOrWhiteSpace(item.Summary) ? item.Summary : null,
-            Type = !string.IsNullOrWhiteSpace(item.Type.Name) ? item.Type.Name : null,
-            TypeId = item.Type.Id != 0 ? item.Type.Id.ToString() : null,
+            Type = item.Type.Name,
+            TypeId = item.Type.Id,
             Priority = !string.IsNullOrWhiteSpace(item.Priority.Name) ? item.Priority.Name : null,
-            PriorityId = item.Priority.Id != 0 ? item.Priority.Id.ToString() : null,
+            PriorityId = item.Priority.Id,
             Status = !string.IsNullOrWhiteSpace(item.Status.Name) ? item.Status.Name : null,
-            StatusId = item.Status.Id != 0 ? item.Status.Id.ToString() : null,
-            StatusCategoryId = item.Status.StatusCategory?.Id != 0 ? item.Status.StatusCategory?.Id.ToString() : null,
-            StatusCategoryKey = !string.IsNullOrWhiteSpace(item.Status.StatusCategory?.Key) ? item.Status.StatusCategory.Key : null,
-            StatusCategoryColor = !string.IsNullOrWhiteSpace(item.Status.StatusCategory?.ColorName) ? item.Status.StatusCategory.ColorName : null,
-            Resolution = !string.IsNullOrWhiteSpace(item.Resolution?.Name) ? item.Resolution.Name : null,
-            ResolutionId = item.Resolution?.Id != 0 ? item.Resolution?.Id.ToString() : null,
+            StatusId = item.Status.Id,
+            Resolution = !string.IsNullOrWhiteSpace(item.Resolution?.Name) ? item.Resolution.Name : JiraResolutionCodes.Unresolved.ToString(),
+            ResolutionId = item.Resolution?.Id ?? (int)JiraResolutionCodes.Unresolved,
             Assignee = !string.IsNullOrWhiteSpace(item.Assignee?.Username) ? item.Assignee.Username : null,
             Reporter = !string.IsNullOrWhiteSpace(item.Reporter?.Username) ? item.Reporter.Username : null,
-            CreatedAt = TryParseDate(item.Created),
-            UpdatedAt = TryParseDate(item.Updated),
-            ResolvedAt = TryParseDate(item.Resolved),
+            CreatedAt = ParseJiraDate(item.Created),
+            UpdatedAt = ParseJiraDate(item.Updated),
+            ResolvedAt = ParseJiraDate(item.Resolved),
             Watches = item.Watches != 0 ? item.Watches.ToString() : null,
             
             // Initialize custom fields to null - they will be populated later by the migration process
@@ -51,17 +48,21 @@ public static class XmlToDatabaseExtensions
             ChangeCategory = null,
             ChangeImpact = null,
             DuplicateIssue = null,
+            DuplicateVotedIssue = null,
             Grouping = null,
             RaisedInVersion = null,
             RelatedIssues = null,
             RelatedArtifacts = null,
             RelatedPages = null,
             RelatedSections = null,
-            RelatedURL = null,
+            RelatedUrl = null,
             ResolutionDescription = null,
             VoteDate = null,
             Vote = null,
-            WorkGroup = null
+            BlockVote = null,
+            WorkGroup = null,
+            SelectedBallot = null,
+            RequestInPerson = null,
         };
     }
 
@@ -71,17 +72,16 @@ public static class XmlToDatabaseExtensions
     /// <param name="comment">The JIRA comment to convert</param>
     /// <param name="issueKey">The issue key this comment belongs to</param>
     /// <returns>A CommentRecord with mapped properties</returns>
-    public static CommentRecord ToCommentRecord(this JiraComment comment, string issueKey)
+    public static CommentRecord ToCommentRecord(this JiraComment comment, IssueRecord issueRecord)
     {
         return new CommentRecord
         {
-            Id = 0, // Auto-increment field, will be set by database
-            JiraCommentId = comment.Id,
-            IssueId = 0, // This would need to be resolved from issue key to issue ID, but current schema uses issue_key
-            IssueKey = issueKey,
-            Author = !string.IsNullOrWhiteSpace(comment.Author) ? comment.Author : string.Empty,
-            CreatedAt = TryParseDate(comment.Created) ?? DateTime.UtcNow, // Use current time as fallback
-            Body = !string.IsNullOrWhiteSpace(comment.Body) ? comment.Body : string.Empty
+            Id = comment.Id,
+            IssueId = issueRecord.Id,
+            IssueKey = issueRecord.Key,
+            Author = comment.Author,
+            CreatedAt = ParseJiraDate(comment.Created) ?? DateTime.UtcNow, // Use current time as fallback
+            Body = comment.Body,
         };
     }
 
@@ -91,10 +91,11 @@ public static class XmlToDatabaseExtensions
     /// <param name="customField">The JIRA custom field to convert</param>
     /// <param name="issueKey">The issue key this custom field belongs to</param>
     /// <returns>A CustomFieldRecord with mapped properties</returns>
-    public static CustomFieldRecord ToCustomFieldRecord(this JiraXmlCustomField customField, string issueKey)
+    public static CustomFieldRecord ToCustomFieldRecord(this JiraXmlCustomField customField, IssueRecord issueRecord)
     {
         // Process custom field values - handle both single and multiple values
-        List<JiraCustomFieldValue> customFieldValues = customField.CustomFieldValues?.Values ?? new List<JiraCustomFieldValue>();
+        List<JiraCustomFieldValue> customFieldValues = customField.FieldValues?.Values ?? [];
+
         string? fieldValue = null;
 
         if (customFieldValues.Count > 1)
@@ -110,12 +111,12 @@ public static class XmlToDatabaseExtensions
 
         return new CustomFieldRecord
         {
-            Id = 0, // Auto-increment field, will be set by database
-            IssueId = 0, // Will be resolved from issue key to issue ID in processing code
-            IssueKey = issueKey,
-            FieldId = !string.IsNullOrWhiteSpace(customField.Id) ? customField.Id : null,
-            FieldKey = !string.IsNullOrWhiteSpace(customField.Key) ? customField.Key : null,
-            FieldName = !string.IsNullOrWhiteSpace(customField.CustomFieldName) ? customField.CustomFieldName : null,
+            Id = CustomFieldRecord.GetIndex(),
+            IssueId = issueRecord.Id,
+            IssueKey = issueRecord.Key,
+            FieldId = !string.IsNullOrWhiteSpace(customField.FieldId) ? customField.FieldId : null,
+            FieldKey = !string.IsNullOrWhiteSpace(customField.FieldKey) ? customField.FieldKey : null,
+            FieldName = !string.IsNullOrWhiteSpace(customField.FieldName) ? customField.FieldName : null,
             FieldValue = !string.IsNullOrWhiteSpace(fieldValue) ? fieldValue : null
         };
     }
@@ -125,7 +126,7 @@ public static class XmlToDatabaseExtensions
     /// </summary>
     /// <param name="dateString">The date string to parse</param>
     /// <returns>Parsed DateTime or null if invalid</returns>
-    private static DateTime? TryParseDate(string? dateString)
+    private static DateTime? ParseJiraDate(string? dateString)
     {
         if (string.IsNullOrWhiteSpace(dateString)) return null;
         
@@ -135,45 +136,5 @@ public static class XmlToDatabaseExtensions
         }
         
         return null;
-    }
-}
-
-/// <summary>
-/// Extension methods for centralized SQLite parameter handling
-/// </summary>
-public static class SqliteParameterExtensions
-{
-    /// <summary>
-    /// Adds a parameter with proper null handling, converting null values to DBNull.Value
-    /// </summary>
-    /// <typeparam name="T">The type of the value</typeparam>
-    /// <param name="command">The SQLite command</param>
-    /// <param name="parameterName">The parameter name (should include $ prefix)</param>
-    /// <param name="value">The value to set</param>
-    public static void AddParameterWithValue<T>(this SqliteCommand command, string parameterName, T? value)
-    {
-        command.Parameters.AddWithValue(parameterName, (object?)value ?? DBNull.Value);
-    }
-    
-    /// <summary>
-    /// Sets a parameter value with proper null handling, converting null values to DBNull.Value
-    /// </summary>
-    /// <typeparam name="T">The type of the value</typeparam>
-    /// <param name="command">The SQLite command</param>
-    /// <param name="parameterName">The parameter name (should include $ prefix)</param>
-    /// <param name="value">The value to set</param>
-    public static void SetParameterValue<T>(this SqliteCommand command, string parameterName, T? value)
-    {
-        command.Parameters[parameterName].Value = (object?)value ?? DBNull.Value;
-    }
-    
-    /// <summary>
-    /// Formats a DateTime for database storage, returning DBNull.Value for null dates
-    /// </summary>
-    /// <param name="dateTime">The DateTime to format</param>
-    /// <returns>Formatted date string or DBNull.Value</returns>
-    public static object FormatDateTimeForDatabase(DateTime? dateTime)
-    {
-        return dateTime?.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture) ?? (object)DBNull.Value;
     }
 }

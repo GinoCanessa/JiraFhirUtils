@@ -6,4 +6,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+	<ItemGroup>
+		<ProjectReference Include="..\JiraFhirUtils.SQLiteGenerator\JiraFhirUtils.SQLiteGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+		<!--Exclude the output of source generators from the compilation-->
+		<!--<Compile Remove="$(CompilerGeneratedFilesOutputPath)/**/*.cs" />-->
+		<!--<Compile Remove="$(GeneratedFolder)/**/*.cs" />-->
+	</ItemGroup>
+
 </Project>

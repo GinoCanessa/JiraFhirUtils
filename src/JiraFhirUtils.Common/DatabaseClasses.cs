@@ -1,77 +1,146 @@
-﻿namespace JiraFhirUtils.Common;
+﻿using JiraFhirUtils.SQLiteGenerator;
+
+namespace JiraFhirUtils.Common;
+
+public enum JiraPriorityCodes : int
+{
+    Highest = 1,
+    VeryHigh = 6,
+    High = 2,
+    MediumHigh = 10000,
+    Medium = 3,
+    Low = 4,
+    VeryLow = 7,
+    Lowest = 5,
+}
+
+public enum  JiraStatusCodes : int
+{
+    Applied = 10107,
+    Deferred = 10306,
+    Duplicate = 10106,
+    Published = 10108,
+    ResolvedNoChange = 10104,
+    ResolvedChangeRequired = 10105,
+    Submitted = 10101,
+    Triaged = 10102,
+    WaitingForInput = 10103,
+}
+
+public enum JiraIssueTypeCodes : int
+{
+    ChangeRequest = 10600,
+    Comment = 10802,
+    Question = 10801,
+    TechnicalCorrection = 10800,
+}
+
+public enum JiraResolutionCodes : int
+{
+    ConsideredNoActionRequired = 10200,
+    ConsideredQuestionAnswered = 10201,
+    ConsideredForFutureUse = 10202,
+    Duplicate = 10002,
+    NotPersuasive = 10207,
+    NotPersuasiveWithModification = 10203,
+    Persuasive = 10205,
+    PersuasiveWithModification = 10206,
+    Retracted = 10400,
+    Unresolved = -1,
+}
 
 /// <summary>
 /// A JIRA Issue record, as represented in the database.
 /// </summary>
-public record class IssueRecord
+
+[JfSQLiteTable("issues")]
+[JfSQLiteIndex(nameof(Key))]
+[JfSQLiteIndex(nameof(ProjectKey), nameof(Key))]
+public partial record class IssueRecord
 {
-    public required int Id { get; init; }
-    public required string Key { get; init; }
-    public required string? Title { get; init; }
-    public required string? IssueUrl { get; init; }
-    public required string? ProjectId { get; init; }
-    public required string? ProjectKey { get; init; }
-    public required string? Description { get; init; }
-    public required string? Summary { get; init; }
-    public required string? Type { get; init; }
-    public required string? TypeId { get; init; }
-    public required string? Priority { get; init; }
-    public required string? PriorityId { get; init; }
-    public required string? Status { get; init; }
-    public required string? StatusId { get; init; }
-    public required string? StatusCategoryId { get; init; }
-    public required string? StatusCategoryKey { get; init; }
-    public required string? StatusCategoryColor { get; init; }
-    public required string? Resolution { get; init; }
-    public required string? ResolutionId { get; init; }
-    public required string? Assignee { get; init; }
-    public required string? Reporter { get; init; }
-    public required DateTime? CreatedAt { get; init; }
-    public required DateTime? UpdatedAt { get; init; }
-    public required DateTime? ResolvedAt { get; init; }
-    public required string? Watches { get; init; }
-    public required string? Specification { get; init; }
-    public required string? AppliedForVersion { get; init; }
-    public required string? ChangeCategory { get; init; }
-    public required string? ChangeImpact { get; init; }
-    public required string? DuplicateIssue { get; init; }
-    public required string? Grouping { get; init; }
-    public required string? RaisedInVersion { get; init; }
-    public required string? RelatedIssues { get; init; }
-    public required string? RelatedArtifacts { get; init; }
-    public required string? RelatedPages { get; init; }
-    public required string? RelatedSections { get; init; }
-    public required string? RelatedURL { get; init; }
-    public required string? ResolutionDescription { get; init; }
-    public required DateTime? VoteDate { get; init; }
-    public required string? Vote { get; init; }
-    public required string? WorkGroup { get; init; }
+    [JfSQLiteKey]
+    public required int Id { get; set; }
+
+    [JfSQLiteUnique]
+    public required string Key { get; set; }
+    public required string Title { get; set; }
+    public required string IssueUrl { get; set; }
+    public required int ProjectId { get; set; }
+    public required string ProjectKey { get; set; }
+    public required string Description { get; set; }
+    public required string? Summary { get; set; }
+    public required string Type { get; set; }
+    public required int TypeId { get; set; }
+    public required string? Priority { get; set; }
+    public required int? PriorityId { get; set; }
+    public required string? Status { get; set; }
+    public required int StatusId { get; set; }
+    public required string Resolution { get; set; }
+    public required int ResolutionId { get; set; }
+    public required string? Assignee { get; set; }
+    public required string? Reporter { get; set; }
+    public required DateTime? CreatedAt { get; set; }
+    public required DateTime? UpdatedAt { get; set; }
+    public required DateTime? ResolvedAt { get; set; }
+    public required string? Watches { get; set; }
+    public required string? Specification { get; set; }
+    public required string? AppliedForVersion { get; set; }
+    public required string? ChangeCategory { get; set; }
+    public required string? ChangeImpact { get; set; }
+    public required string? DuplicateIssue { get; set; }
+    public required string? DuplicateVotedIssue { get; set; }
+    public required string? Grouping { get; set; }
+    public required string? RaisedInVersion { get; set; }
+    public required string? RelatedIssues { get; set; }
+    public required string? RelatedArtifacts { get; set; }
+    public required string? RelatedPages { get; set; }
+    public required string? RelatedSections { get; set; }
+    public required string? RelatedUrl { get; set; }
+    public required string? ResolutionDescription { get; set; }
+    public required DateTime? VoteDate { get; set; }
+    public required string? Vote { get; set; }
+    public required string? BlockVote { get; set; }
+    public required string? WorkGroup { get; set; }
+    public required string? SelectedBallot { get; set; }
+    public required string? RequestInPerson { get; set; }
 }
 
 /// <summary>
 /// A JIRA Comment record, as represented in the database.
 /// </summary>
-public record class CommentRecord
+[JfSQLiteTable("comments")]
+[JfSQLiteIndex(nameof(IssueKey))]
+public partial record class CommentRecord
 {
-    public required int Id { get; init; }
-    public required int JiraCommentId { get; init; }
-    public required int IssueId { get; init; }
-    public required string IssueKey { get; init; }
-    public required string Author { get; init; }
-    public required DateTime CreatedAt { get; init; }
-    public required string Body { get; init; }
+    [JfSQLiteKey]
+    public required int Id { get; set; }
+
+    [JfSQLiteForeignKey(referenceColumn: nameof(IssueRecord.Id))]
+    public required int IssueId { get; set; }
+    public required string IssueKey { get; set; }
+
+    public required string Author { get; set; }
+    public required DateTime CreatedAt { get; set; }
+    public required string Body { get; set; }
 }
 
 /// <summary>
 /// A JIRA Custom Field record, as represented in the database.
 /// </summary>
-public record class CustomFieldRecord
+[JfSQLiteTable("custom_fields")]
+[JfSQLiteIndex(nameof(IssueId))]
+[JfSQLiteIndex(nameof(IssueKey))]
+public partial record class CustomFieldRecord
 {
-    public int Id { get; init; }
-    public required int IssueId { get; init; }
-    public required string IssueKey { get; init; }
-    public required string? FieldId { get; init; }
-    public required string? FieldKey { get; init; }
-    public required string? FieldName { get; init; }
-    public required string? FieldValue { get; init; }
+    [JfSQLiteKey]
+    public int Id { get; set; }
+
+    [JfSQLiteForeignKey(referenceColumn:nameof(IssueRecord.Id))]
+    public required int IssueId { get; set; }
+    public required string IssueKey { get; set; }
+
+    public required string? FieldId { get; set; }
+    public required string? FieldKey { get; set; }
+    public required string? FieldName { get; set; }
+    public required string? FieldValue { get; set; }
 }

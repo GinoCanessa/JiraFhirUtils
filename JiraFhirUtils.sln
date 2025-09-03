@@ -10,7 +10,10 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
+		csproject.props = csproject.props
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JiraFhirUtils.SQLiteGenerator", "src\JiraFhirUtils.SQLiteGenerator\JiraFhirUtils.SQLiteGenerator.csproj", "{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +29,10 @@ Global
 		{70A4FE5E-AABC-45E3-99F4-95C083B6072D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{70A4FE5E-AABC-45E3-99F4-95C083B6072D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{70A4FE5E-AABC-45E3-99F4-95C083B6072D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

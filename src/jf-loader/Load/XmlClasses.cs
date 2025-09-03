@@ -318,16 +318,16 @@ namespace jf_loader.Load
     public class JiraXmlCustomField
     {
         [XmlAttribute("id")]
-        public string Id { get; set; } = string.Empty;
+        public string FieldId { get; set; } = string.Empty;
 
         [XmlAttribute("key")]
-        public string Key { get; set; } = string.Empty;
+        public string FieldKey { get; set; } = string.Empty;
 
         [XmlElement("customfieldname")]
-        public string CustomFieldName { get; set; } = string.Empty;
+        public string FieldName { get; set; } = string.Empty;
 
         [XmlElement("customfieldvalues")]
-        public JiraCustomFieldValues? CustomFieldValues { get; set; }
+        public JiraCustomFieldValues? FieldValues { get; set; }
     }
 
     /// <summary>

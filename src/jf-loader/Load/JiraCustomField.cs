@@ -1,4 +1,5 @@
-﻿using System;
+﻿using JiraFhirUtils.Common;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -17,125 +18,158 @@ internal class JiraCustomField
         public required string FieldKey { get; init; }
         public required string FieldName { get; init; }
         public required string DbColumn { get; init; }
+        public bool UseCoalesce { get; init; } = false;
     }
 
     /// <summary>
     /// Custom field mapping configuration - matches TypeScript version
     /// </summary>
-    internal static readonly Dictionary<string, CustomFieldMappingInfo> CustomFieldMappings = new()
-    {
-        ["specification"] = new()
+    internal static readonly List<CustomFieldMappingInfo> CustomFieldMappings = [
+        new()
         {
             FieldId = "customfield_11302",
             FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
             FieldName = "Specification",
-            DbColumn = "specification"
+            DbColumn = nameof(IssueRecord.Specification),
         },
-        ["appliedForVersion"] = new()
+        new()
         {
             FieldId = "customfield_11807",
             FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
             FieldName = "Applied for version",
-            DbColumn = "appliedForVersion"
+            DbColumn = nameof(IssueRecord.AppliedForVersion),
         },
-        ["changeCategory"] = new()
+        new()
         {
             FieldId = "customfield_10512",
             FieldKey = "com.atlassian.jira.plugin.system.customfieldtypes:select",
             FieldName = "Change Category",
-            DbColumn = "changeCategory"
+            DbColumn = nameof(IssueRecord.ChangeCategory),
         },
-        ["changeImpact"] = new()
+        new()
         {
             FieldId = "customfield_10511",
             FieldKey = "com.atlassian.jira.plugin.system.customfieldtypes:select",
             FieldName = "Change Impact",
-            DbColumn = "changeImpact"
+            DbColumn = nameof(IssueRecord.ChangeImpact),
         },
-        ["duplicateIssue"] = new()
+        new()
         {
             FieldId = "customfield_14909",
             FieldKey = "com.onresolve.jira.groovy.groovyrunner:single-issue-picker-cf",
             FieldName = "Duplicate Issue",
-            DbColumn = "duplicateIssue"
+            DbColumn = nameof(IssueRecord.DuplicateIssue),
         },
-        ["grouping"] = new()
+        new()
+        {
+            FieldId = "customfield_14907",
+            FieldKey = "com.onresolve.jira.groovy.groovyrunner:single-issue-picker-cf",
+            FieldName = "Duplicate Voted Issue",
+            DbColumn = nameof(IssueRecord.DuplicateVotedIssue),
+        },
+        new()
         {
             FieldId = "customfield_11402",
             FieldKey = "com.atlassian.jira.plugin.system.customfieldtypes:labels",
             FieldName = "Grouping",
-            DbColumn = "grouping"
+            DbColumn = nameof(IssueRecord.Grouping),
         },
-        ["raisedInVersion"] = new()
+        new()
         {
             FieldId = "customfield_11808",
             FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
             FieldName = "Raised in version",
-            DbColumn = "raisedInVersion"
+            DbColumn = nameof(IssueRecord.RaisedInVersion),
         },
-        ["relatedIssues"] = new()
+        new()
         {
             FieldId = "customfield_14905",
             FieldKey = "com.onresolve.jira.groovy.groovyrunner:multiple-issue-picker-cf",
             FieldName = "Related Issues",
-            DbColumn = "relatedIssues"
+            DbColumn = nameof(IssueRecord.RelatedIssues),
         },
-        ["relatedArtifacts"] = new()
+        new()
         {
             FieldId = "customfield_11300",
             FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
             FieldName = "Related Artifact(s)",
-            DbColumn = "relatedArtifacts"
+            DbColumn = nameof(IssueRecord.RelatedArtifacts),
+            UseCoalesce = true,
         },
-        ["relatedPages"] = new()
+        new()
         {
             FieldId = "customfield_11301",
             FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
             FieldName = "Related Page(s)",
-            DbColumn = "relatedPages"
+            DbColumn = nameof(IssueRecord.RelatedPages),
+            UseCoalesce = true,
         },
-        ["relatedSections"] = new()
+        new()
         {
             FieldId = "customfield_10518",
             FieldKey = "com.atlassian.jira.plugin.system.customfieldtypes:textfield",
             FieldName = "Related Section(s)",
-            DbColumn = "relatedSections"
+            DbColumn = nameof(IssueRecord.RelatedSections),
         },
-        ["relatedURL"] = new()
+        new()
         {
             FieldId = "customfield_10612",
             FieldKey = "com.atlassian.jira.plugin.system.customfieldtypes:url",
             FieldName = "Related URL",
-            DbColumn = "relatedURL"
+            DbColumn = nameof(IssueRecord.RelatedUrl),
         },
-        ["resolutionDescription"] = new()
+        new()
         {
             FieldId = "customfield_10618",
             FieldKey = "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
             FieldName = "Resolution Description",
-            DbColumn = "resolutionDescription"
+            DbColumn = nameof(IssueRecord.ResolutionDescription),
         },
-        ["voteDate"] = new()
+         new()
         {
             FieldId = "customfield_10525",
             FieldKey = "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
             FieldName = "Vote Date",
-            DbColumn = "voteDate"
+            DbColumn = nameof(IssueRecord.VoteDate),
         },
-        ["vote"] = new()
+        new()
         {
             FieldId = "customfield_10510",
             FieldKey = "com.atlassian.jira.plugin.system.customfieldtypes:textfield",
             FieldName = "Resolution Vote",
-            DbColumn = "vote"
+            DbColumn = nameof(IssueRecord.Vote),
         },
-        ["workGroup"] = new()
+        new()
         {
             FieldId = "customfield_11400",
             FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
             FieldName = "Work Group",
-            DbColumn = "workGroup"
-        }
-    };
+            DbColumn = nameof(IssueRecord.WorkGroup),
+            UseCoalesce = true,
+        },
+        new()
+        {
+            FieldId = "customfield_14904",
+            FieldKey = "com.onresolve.jira.groovy.groovyrunner:scripted-field",
+            FieldName = "Block Vote",
+            DbColumn = nameof(IssueRecord.BlockVote),
+        },
+        new()
+        {
+            FieldId = "customfield_10902",
+            FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
+            FieldName = "Selected Ballot",
+            DbColumn = nameof(IssueRecord.SelectedBallot),
+            UseCoalesce = true,
+        },
+        new()
+        {
+            FieldId = "customfield_11000",
+            FieldKey = "com.atlassian.jira.plugin.system.customfieldtypes:multiuserpicker",
+            FieldName = "Request in-person",
+            DbColumn = nameof(IssueRecord.RequestInPerson),
+            UseCoalesce = true,
+        },
+    ];
 
 }
