@@ -7,13 +7,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace jf_loader.Processing;
+namespace jira_fhir_cli.FullTextSearch;
 
-internal class JiraFts
+internal class FtsProcessor
 {
     private CliConfig _config;
 
-    public JiraFts(CliConfig config)
+    public FtsProcessor(CliConfig config)
     {
         _config = config;
     }

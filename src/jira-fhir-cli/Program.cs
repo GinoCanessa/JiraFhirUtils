@@ -1,9 +1,8 @@
-﻿using jf_loader.Load;
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text.Json;
 
-namespace jf_loader;
+namespace jira_fhir_cli;
 
 internal class Program
 {
@@ -22,11 +21,14 @@ internal class Program
             // set the handlers for each command
             switch (name)
             {
-                case CliLoadCommand.CommandName:
+                case CliLoadXmlCommand.CommandName:
                     cmd.SetAction(LoadCommandHandler);
                     break;
-                case CliFtsCommand.CommandName:
+                case CliBuildFtsCommand.CommandName:
                     cmd.SetAction(FtsCommandHandler);
+                    break;
+                case CliExtractKewordsCommand.CommandName:
+                    cmd.SetAction(KeywordCommandHandler);
                     break;
             }
 
@@ -42,7 +44,7 @@ internal class Program
 
     private static async void LoadCommandHandler(ParseResult pr)
     {
-        if (pr.CommandResult.Command is not CliLoadCommand lc)
+        if (pr.CommandResult.Command is not CliLoadXmlCommand lc)
         {
             Console.WriteLine("Incorrect mapping from command to command handler!");
             _retVal = 1;
@@ -53,7 +55,7 @@ internal class Program
 
         try
         {
-            JiraXmlToSql jiraXmlToSql = new(config);
+            Load.JiraXmlToSql jiraXmlToSql = new(config);
             await jiraXmlToSql.ProcessAsync();
             _retVal = 0;
         }
@@ -66,7 +68,7 @@ internal class Program
 
     private static async void FtsCommandHandler(ParseResult pr)
     {
-        if (pr.CommandResult.Command is not CliFtsCommand fc)
+        if (pr.CommandResult.Command is not CliBuildFtsCommand fc)
         {
             Console.WriteLine("Incorrect mapping from command to command handler!");
             _retVal = 1;
@@ -75,13 +77,35 @@ internal class Program
         CliConfig config = new(fc.CommandCliOptions, pr);
         try
         {
-            Processing.JiraFts fts = new(config);
+            FullTextSearch.FtsProcessor fts = new(config);
             await fts.ProcessAsync();
             _retVal = 0;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error creating FTS tables: {ex.Message}");
+            _retVal = ex.HResult;
+        }
+    }
+
+    private static async void KeywordCommandHandler(ParseResult pr)
+    {
+        if (pr.CommandResult.Command is not CliExtractKewordsCommand kc)
+        {
+            Console.WriteLine("Incorrect mapping from command to command handler!");
+            _retVal = 1;
+            return;
+        }
+        CliConfig config = new(kc.CommandCliOptions, pr);
+        try
+        {
+            Keyword.KeywordProcessor kp = new(config);
+            await kp.ProcessAsync();
+            _retVal = 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing keywords: {ex.Message}");
             _retVal = ex.HResult;
         }
     }

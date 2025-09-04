@@ -1,4 +1,4 @@
-﻿using fhir_codegen.SQLiteGenerator;
+﻿using JiraFhirUtils.SQLiteGenerator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
@@ -1130,6 +1130,7 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                                     true,
                                     pkIsIdentity ? pkColName : null,
                                     pkPropType,
+                                    executeCommand: true,
                                     includeIdentity: true,
                                     identityOnly: true,
                                     setIdentity: false))}}}
@@ -1191,6 +1192,7 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                     
                                 {{{string.Join(_line_2, getConditionLines(true))}}}
 
+                                command.ExecuteNonQuery();
                                 transaction.Commit();
                             }
                         }

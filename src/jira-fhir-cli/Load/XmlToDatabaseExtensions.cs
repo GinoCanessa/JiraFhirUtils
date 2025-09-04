@@ -2,7 +2,7 @@ using System.Globalization;
 using JiraFhirUtils.Common;
 using Microsoft.Data.Sqlite;
 
-namespace jf_loader.Load;
+namespace jira_fhir_cli.Load;
 
 /// <summary>
 /// Extension methods to map XML classes to Database record classes

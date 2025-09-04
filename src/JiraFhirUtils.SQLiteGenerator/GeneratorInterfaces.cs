@@ -12,7 +12,7 @@ public class GeneratorInterfaces
 
     //internal const string CgInterfaces = """
     //    #nullable enable
-    //    namespace fhir_codegen.SQLiteGenerator
+    //    namespace JiraFhirUtils.SQLiteGenerator
     //    {
     //    }
     //    #nullable restore

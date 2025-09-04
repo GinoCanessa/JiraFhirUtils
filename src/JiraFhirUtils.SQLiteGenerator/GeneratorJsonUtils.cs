@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace fhir_codegen.SQLiteGenerator;
+namespace JiraFhirUtils.SQLiteGenerator;
 
 public class GeneratorJsonUtils
 {

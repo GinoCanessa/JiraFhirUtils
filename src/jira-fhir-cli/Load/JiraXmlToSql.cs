@@ -6,7 +6,7 @@ using System.Transactions;
 using System.Xml.Linq;
 using System.Xml.Serialization;
 
-namespace jf_loader.Load;
+namespace jira_fhir_cli.Load;
 
 internal class JiraXmlToSql
 {

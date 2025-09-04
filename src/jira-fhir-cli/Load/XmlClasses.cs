@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Serialization;
 
-namespace jf_loader.Load
+namespace jira_fhir_cli.Load
 {
     /// <summary>
     /// Root RSS element for JIRA XML export files

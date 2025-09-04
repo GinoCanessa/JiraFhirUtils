@@ -3,14 +3,15 @@ using System.Collections.Generic;
 using System.CommandLine;
 using System.Diagnostics.CodeAnalysis;
 
-namespace jf_loader;
+namespace jira_fhir_cli;
 
 public record class CliOptions
 {
     public static readonly List<(string, Command)> Commands = new()
     {
-        ( CliLoadCommand.CommandName, new CliLoadCommand() ),
-        ( CliFtsCommand.CommandName, new CliFtsCommand() ),
+        ( CliLoadXmlCommand.CommandName, new CliLoadXmlCommand() ),
+        ( CliBuildFtsCommand.CommandName, new CliBuildFtsCommand() ),
+        ( CliExtractKewordsCommand.CommandName, new CliExtractKewordsCommand() ),
     };
 
     public Option<string?> DbPath { get; set; } = new Option<string?>("--db-path")
@@ -44,6 +45,22 @@ public record class CliOptions
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => false,
     };
+
+    public Option<string?> FhirSpecDatabase { get; set; } = new Option<string?>(
+        "--fhir-spec-database")
+    {
+        Description = "Path to the FHIR specification database file.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+
+    public Option<string> StopwordFile { get; set; } = new Option<string>(
+        "--stopword-file")
+    {
+        Description = "Path to a file containing stopwords for full-text search indexing.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => "./Data/StopWords.txt",
+    };
 }
 
 public record class CliConfig
@@ -52,6 +69,8 @@ public record class CliConfig
     public required string JiraXmlDir { get; init; }
     public required bool DropTables { get; init; }
     public required bool KeepCustomFieldSource { get; init; }
+    public required string? FhirSpecDatabase { get; init; }
+    public required string StopwordFile { get; init; }
 
     public CliConfig() { }
 
@@ -82,20 +101,46 @@ public record class CliConfig
 
         JiraXmlDir = jiraXmlDir;
 
+        string? fhirSpecDbParam = pr.GetValue(opt.FhirSpecDatabase);
+        if (!string.IsNullOrEmpty(fhirSpecDbParam))
+        {
+            string? fhirSpecDb = FileUtils.FindRelativeFile(null, fhirSpecDbParam, false)
+                ?? fhirSpecDbParam;
+            if (!File.Exists(fhirSpecDb) && !Path.IsPathFullyQualified(fhirSpecDb))
+            {
+                fhirSpecDb = Path.Combine(Environment.CurrentDirectory, fhirSpecDb);
+            }
+            FhirSpecDatabase = fhirSpecDb;
+        }
+        else
+        {
+            FhirSpecDatabase = null;
+        }
+
+        string stopwordFileParam = pr.GetValue(opt.StopwordFile) ?? "./Data/StopWords.txt";
+        string stopwordFile = FileUtils.FindRelativeFile(null, stopwordFileParam, false)
+            ?? stopwordFileParam;
+        if (!File.Exists(stopwordFile) && !Path.IsPathFullyQualified(stopwordFile))
+        {
+            stopwordFile = Path.Combine(Environment.CurrentDirectory, stopwordFile);
+        }
+
+        StopwordFile = stopwordFile;
+
         // load options that do not require extra processing
         DropTables = pr.GetValue(opt.LoadDropTables);
         KeepCustomFieldSource = pr.GetValue(opt.KeepCustomFieldSource);
     }
 }
 
-public class CliLoadCommand : Command
+public class CliLoadXmlCommand : Command
 {
-    public const string CommandName = "load";
+    public const string CommandName = "load-xml";
 
     private CliOptions _cliOptions = new();
     public CliOptions CommandCliOptions => _cliOptions;
 
-    public CliLoadCommand() : base(CommandName, "Load JIRA issues from XML export files into the database.")
+    public CliLoadXmlCommand() : base(CommandName, "Load JIRA issues from XML export files into the database.")
     {
         // Add options defined in CliOptions
         this.Add(_cliOptions.DbPath);
@@ -105,16 +150,30 @@ public class CliLoadCommand : Command
     }
 }
 
-public class CliFtsCommand : Command
+public class CliBuildFtsCommand : Command
 {
-    public const string CommandName = "fts";
+    public const string CommandName = "build-fts";
 
     private CliOptions _cliOptions = new();
     public CliOptions CommandCliOptions => _cliOptions;
 
-    public CliFtsCommand() : base(CommandName, "Create full-text index tables in the database, using FTS5.")
+    public CliBuildFtsCommand() : base(CommandName, "Create full-text index tables in the database, using FTS5.")
     {
         // Add options defined in CliOptions
         this.Add(_cliOptions.DbPath);
+    }
+}
+
+public class CliExtractKewordsCommand : Command
+{
+    public const string CommandName = "extract-keywords";
+    private CliOptions _cliOptions = new();
+    public CliOptions CommandCliOptions => _cliOptions;
+    public CliExtractKewordsCommand() : base(CommandName, "Extract and display keywords from the issues in the database.")
+    {
+        // Add options defined in CliOptions
+        this.Add(_cliOptions.DbPath);
+        this.Add(_cliOptions.FhirSpecDatabase);
+        this.Add(_cliOptions.StopwordFile);
     }
 }

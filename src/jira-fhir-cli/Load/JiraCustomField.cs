@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace jf_loader.Load;
+namespace jira_fhir_cli.Load;
 
 internal class JiraCustomField
 {
@@ -31,6 +31,7 @@ internal class JiraCustomField
             FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
             FieldName = "Specification",
             DbColumn = nameof(IssueRecord.Specification),
+            UseCoalesce = true,
         },
         new()
         {
@@ -38,6 +39,7 @@ internal class JiraCustomField
             FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
             FieldName = "Applied for version",
             DbColumn = nameof(IssueRecord.AppliedForVersion),
+            UseCoalesce = true,
         },
         new()
         {
@@ -80,6 +82,7 @@ internal class JiraCustomField
             FieldKey = "com.valiantys.jira.plugins.SQLFeed:nfeed-standard-customfield-type",
             FieldName = "Raised in version",
             DbColumn = nameof(IssueRecord.RaisedInVersion),
+            UseCoalesce = true,
         },
         new()
         {
