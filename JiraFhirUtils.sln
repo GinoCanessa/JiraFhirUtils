@@ -5,8 +5,6 @@ VisualStudioVersion = 17.14.36408.4
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JiraFhirUtils.Common", "src\JiraFhirUtils.Common\JiraFhirUtils.Common.csproj", "{68C9963F-636A-4C5B-9C2B-AB85BF2274CE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jf-loader", "src\jf-loader\jf-loader.csproj", "{70A4FE5E-AABC-45E3-99F4-95C083B6072D}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
@@ -14,6 +12,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JiraFhirUtils.SQLiteGenerator", "src\JiraFhirUtils.SQLiteGenerator\JiraFhirUtils.SQLiteGenerator.csproj", "{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jira-fhir-cli", "src\jira-fhir-cli\jira-fhir-cli.csproj", "{AF184D6D-4F6F-616C-4137-EF3082C765DC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jira-fhir-cli.Tests", "src\jira-fhir-cli.Tests\jira-fhir-cli.Tests.csproj", "{888CD6A1-A2A9-4CDE-9373-675590A7FB51}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -25,14 +27,18 @@ Global
 		{68C9963F-636A-4C5B-9C2B-AB85BF2274CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{68C9963F-636A-4C5B-9C2B-AB85BF2274CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{68C9963F-636A-4C5B-9C2B-AB85BF2274CE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{70A4FE5E-AABC-45E3-99F4-95C083B6072D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{70A4FE5E-AABC-45E3-99F4-95C083B6072D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{70A4FE5E-AABC-45E3-99F4-95C083B6072D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{70A4FE5E-AABC-45E3-99F4-95C083B6072D}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AF184D6D-4F6F-616C-4137-EF3082C765DC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF184D6D-4F6F-616C-4137-EF3082C765DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AF184D6D-4F6F-616C-4137-EF3082C765DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AF184D6D-4F6F-616C-4137-EF3082C765DC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

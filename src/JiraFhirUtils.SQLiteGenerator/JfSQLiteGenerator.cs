@@ -668,11 +668,11 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                     public partial {{{decForGenCategory(genCategory)}}} {{{className}}}
                     {
                         public static string DefaultTableName => "{{{tableName}}}";
-                        {{{(pkPropType == "int" ? "internal static int _indexValue = 0;" : string.Empty)}}}
-                        {{{(pkPropType == "int" ? "public static int GetIndex() => Interlocked.Increment(ref _indexValue);" : string.Empty)}}}
+                        {{{(pkPropType != "long" ? "internal static int _indexValue = 0;" : string.Empty)}}}
+                        {{{(pkPropType != "long" ? "public static int GetIndex() => Interlocked.Increment(ref _indexValue);" : string.Empty)}}}
                         {{{(pkPropType == "long" ? "internal static long _indexValue = 0;" : string.Empty)}}}
                         {{{(pkPropType == "long" ? "public static long GetIndex() => Interlocked.Increment(ref _indexValue);" : string.Empty)}}}
-                    
+
                         public static bool CreateTable(IDbConnection dbConnection, string? dbTableName = null)
                         {
                             dbTableName ??= "{{{tableName}}}";

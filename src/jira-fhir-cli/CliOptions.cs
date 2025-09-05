@@ -54,12 +54,12 @@ public record class CliOptions
         DefaultValueFactory = (ar) => null,
     };
 
-    public Option<string> StopwordFile { get; set; } = new Option<string>(
-        "--stopword-file")
+    public Option<string> KeywordDatabase { get; set; } = new Option<string>(
+        "--keyword-database")
     {
-        Description = "Path to a file containing stopwords for full-text search indexing.",
+        Description = "Path to a SQLite database with auxilary data for processing keywords.",
         Arity = ArgumentArity.ZeroOrOne,
-        DefaultValueFactory = (ar) => "./Data/StopWords.txt",
+        DefaultValueFactory = (ar) => "text_aux.sqlite",
     };
 }
 
@@ -70,7 +70,7 @@ public record class CliConfig
     public required bool DropTables { get; init; }
     public required bool KeepCustomFieldSource { get; init; }
     public required string? FhirSpecDatabase { get; init; }
-    public required string StopwordFile { get; init; }
+    public required string KeywordDatabase { get; init; }
 
     public CliConfig() { }
 
@@ -117,15 +117,15 @@ public record class CliConfig
             FhirSpecDatabase = null;
         }
 
-        string stopwordFileParam = pr.GetValue(opt.StopwordFile) ?? "./Data/StopWords.txt";
-        string stopwordFile = FileUtils.FindRelativeFile(null, stopwordFileParam, false)
-            ?? stopwordFileParam;
-        if (!File.Exists(stopwordFile) && !Path.IsPathFullyQualified(stopwordFile))
+        string keywordDbFileParam = pr.GetValue(opt.KeywordDatabase) ?? "./Data/StopWords.txt";
+        string keywordDbFile = FileUtils.FindRelativeFile(null, keywordDbFileParam, false)
+            ?? keywordDbFileParam;
+        if (!File.Exists(keywordDbFile) && !Path.IsPathFullyQualified(keywordDbFile))
         {
-            stopwordFile = Path.Combine(Environment.CurrentDirectory, stopwordFile);
+            keywordDbFile = Path.Combine(Environment.CurrentDirectory, keywordDbFile);
         }
 
-        StopwordFile = stopwordFile;
+        KeywordDatabase = keywordDbFile;
 
         // load options that do not require extra processing
         DropTables = pr.GetValue(opt.LoadDropTables);
@@ -174,6 +174,6 @@ public class CliExtractKewordsCommand : Command
         // Add options defined in CliOptions
         this.Add(_cliOptions.DbPath);
         this.Add(_cliOptions.FhirSpecDatabase);
-        this.Add(_cliOptions.StopwordFile);
+        this.Add(_cliOptions.KeywordDatabase);
     }
 }

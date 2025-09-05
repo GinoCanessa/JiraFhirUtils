@@ -8,16 +8,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <None Remove="Data\StopWords.txt" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Content Include="Data\StopWords.txt">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	  </Content>
-	</ItemGroup>
-
-	<ItemGroup>
 		<PackageReference Include="System.CommandLine" Version="2.0.0-beta7.25380.108" />
 		<PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
 	</ItemGroup>
