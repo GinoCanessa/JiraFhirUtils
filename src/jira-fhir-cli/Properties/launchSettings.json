@@ -4,6 +4,17 @@
       "commandName": "Project",
       "commandLineArgs": "load-xml --drop-tables true"
     },
+    "summarize-lm": {
+      "commandName": "Project",
+      "commandLineArgs": "summarize --llm-provider lmstudio --llm-model gpt-oss-20b-mlx"
+    },
+    "summarize-proxy": {
+      "commandName": "Project",
+      "commandLineArgs": "summarize --llm-provider openai --llm-model gpt-4 --llm-endpoint http://localhost:2624/",
+      "environmentVariables": {
+        "OPENAI_API_KEY": "sk-xxxx"
+      }
+    },
     "build-fts": {
       "commandName": "Project",
       "commandLineArgs": "build-fts"

@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace jira_fhir_cli;
 
-internal class Program
+internal abstract class Program
 {
     private static int _retVal = 0;
 
@@ -22,13 +22,16 @@ internal class Program
             switch (name)
             {
                 case CliLoadXmlCommand.CommandName:
-                    cmd.SetAction(LoadCommandHandler);
+                    cmd.SetAction(loadCommandHandler);
                     break;
                 case CliBuildFtsCommand.CommandName:
-                    cmd.SetAction(FtsCommandHandler);
+                    cmd.SetAction(ftsCommandHandler);
                     break;
                 case CliExtractKeywordsCommand.CommandName:
-                    cmd.SetAction(KeywordCommandHandler);
+                    cmd.SetAction(keywordCommandHandler);
+                    break;
+                case CliSummarizeCommand.CommandName:
+                    cmd.SetAction(summarizeCommandHandler);
                     break;
             }
 
@@ -42,7 +45,7 @@ internal class Program
         return _retVal;
     }
 
-    private static async void LoadCommandHandler(ParseResult pr)
+    private static async Task loadCommandHandler(ParseResult pr)
     {
         if (pr.CommandResult.Command is not CliLoadXmlCommand lc)
         {
@@ -66,7 +69,7 @@ internal class Program
         }
     }
 
-    private static async void FtsCommandHandler(ParseResult pr)
+    private static async Task ftsCommandHandler(ParseResult pr)
     {
         if (pr.CommandResult.Command is not CliBuildFtsCommand fc)
         {
@@ -88,7 +91,7 @@ internal class Program
         }
     }
 
-    private static async void KeywordCommandHandler(ParseResult pr)
+    private static async Task keywordCommandHandler(ParseResult pr)
     {
         if (pr.CommandResult.Command is not CliExtractKeywordsCommand kc)
         {
@@ -106,6 +109,29 @@ internal class Program
         catch (Exception ex)
         {
             Console.WriteLine($"Error processing keywords: {ex.Message}");
+            _retVal = ex.HResult;
+        }
+    }
+
+    private static async Task summarizeCommandHandler(ParseResult pr)
+    {
+        if (pr.CommandResult.Command is not CliSummarizeCommand sc)
+        {
+            Console.WriteLine("Incorrect mapping from command to command handler!");
+            _retVal = 1;
+            return;
+        }
+        
+        CliConfig config = new(sc.CommandCliOptions, pr);
+        try
+        {
+            Summary.AiSummaryProcessor processor = new(config);
+            await processor.ProcessAsync();
+            _retVal = 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating summaries: {ex.Message}");
             _retVal = ex.HResult;
         }
     }

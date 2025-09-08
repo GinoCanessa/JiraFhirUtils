@@ -61,6 +61,54 @@ public record class CliOptions
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => "auxiliary.sqlite",
     };
+
+    public Option<string?> LlmConfigPath { get; set; } = new Option<string?>("--llm-config")
+    {
+        Description = "Path to LLM configuration JSON file.",
+        Arity = ArgumentArity.ZeroOrOne,
+    };
+
+    public Option<string?> LlmProvider { get; set; } = new Option<string?>("--llm-provider")
+    {
+        Description = "LLM provider (openai, lmstudio, anthropic, ollama).",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => "lmstudio",
+    };
+
+    public Option<string?> LlmApiEndpoint { get; set; } = new Option<string?>("--llm-endpoint")
+    {
+        Description = "LLM API endpoint URL.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => "http://localhost:1234/v1",
+    };
+    
+    public Option<string?> LlmApiVersion { get; set; } = new Option<string?>("--llm-api-version")
+    {
+        Description = "LLM API version (if applicable).",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+
+    public Option<string?> LlmModel { get; set; } = new Option<string?>("--llm-model")
+    {
+        Description = "Model name to use for summaries.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => "local-model",
+    };
+
+    public Option<bool> OverwriteSummaries { get; set; } = new Option<bool>("--overwrite")
+    {
+        Description = "Overwrite existing AI summaries.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => false,
+    };
+
+    public Option<int> BatchSize { get; set; } = new Option<int>("--batch-size")
+    {
+        Description = "Number of issues to process in each batch.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => 10,
+    };
 }
 
 public record class CliConfig
@@ -71,6 +119,13 @@ public record class CliConfig
     public required bool KeepCustomFieldSource { get; init; }
     public required string? FhirSpecDatabase { get; init; }
     public required string KeywordDatabase { get; init; }
+    public string? LlmConfigPath { get; init; }
+    public string? LlmProvider { get; init; }
+    public string? LlmApiEndpoint { get; init; }
+    public string? LlmModel { get; init; }
+    public string? LlmApiVersion { get; init; }
+    public bool OverwriteSummaries { get; init; }
+    public int BatchSize { get; init; }
 
     public CliConfig() { }
 
@@ -130,6 +185,15 @@ public record class CliConfig
         // load options that do not require extra processing
         DropTables = pr.GetValue(opt.LoadDropTables);
         KeepCustomFieldSource = pr.GetValue(opt.KeepCustomFieldSource);
+
+        // load LLM-related options
+        LlmConfigPath = pr.GetValue(opt.LlmConfigPath);
+        LlmProvider = pr.GetValue(opt.LlmProvider);
+        LlmApiEndpoint = pr.GetValue(opt.LlmApiEndpoint);
+        LlmModel = pr.GetValue(opt.LlmModel);
+        LlmApiVersion = pr.GetValue(opt.LlmApiVersion);
+        OverwriteSummaries = pr.GetValue(opt.OverwriteSummaries);
+        BatchSize = pr.GetValue(opt.BatchSize);
     }
 }
 
@@ -187,5 +251,12 @@ public class CliSummarizeCommand : Command
     {
         // Add options defined in CliOptions
         this.Add(_cliOptions.DbPath);
+        this.Add(_cliOptions.LlmConfigPath);
+        this.Add(_cliOptions.LlmProvider);
+        this.Add(_cliOptions.LlmApiEndpoint);
+        this.Add(_cliOptions.LlmModel);
+        this.Add(_cliOptions.LlmApiVersion);
+        this.Add(_cliOptions.OverwriteSummaries);
+        this.Add(_cliOptions.BatchSize);
     }
 }
