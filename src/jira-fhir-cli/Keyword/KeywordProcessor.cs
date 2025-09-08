@@ -16,22 +16,8 @@ namespace jira_fhir_cli.Keyword;
 public class KeywordProcessor
 {
     private const int _minKeywordLength = 3;
-
-    private enum KeywordTypeCodes : int
-    {
-        Word = 0,
-        StopWord = 1,
-        FhirElementPath = 2,
-        FhirOperationName = 3,
-    }
-    private record class WordStats
-    {
-        public required string FirstOccurenceText { get; set; }
-        public required string Sanitized { get; set; }
-        public required int Count { get; set; }
-        public required KeywordTypeCodes KeywordType { get; set; }
-    }
-
+    private const int _keywordsPerIssue = 10;
+    
     private static System.Text.RegularExpressions.Regex _htmlStripRegex = new("<.*?>", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     private static readonly char[] _wordSplitChars = [' ', '\t', '\r', '\n'];
@@ -61,15 +47,28 @@ public class KeywordProcessor
     {
         Console.WriteLine("Starting JIRA Database Keyword extraction...");
         Console.WriteLine($"Using database: {_config.DbPath}");
-
+        
         using SqliteConnection db = new SqliteConnection($"Data Source={_config.DbPath}");
         await db.OpenAsync();
 
+        // drop existing tables if they exist
+        DbIssueKeywordRecord.DropTable(db);
+        DbCorpusKeywordRecord.DropTable(db);
+        
+        // ensure our tables exist
+        DbIssueKeywordRecord.CreateTable(db);
+        DbCorpusKeywordRecord.CreateTable(db);
+
+        // get current indexes
+        DbIssueKeywordRecord.LoadMaxKey(db);
+        DbCorpusKeywordRecord.LoadMaxKey(db);
+        
         processIssues(db);
     }
 
 
-    private class BlockWordCountInfo : Dictionary<string, WordStats> { }
+    private class IssueWordCountInfo : Dictionary<string, DbIssueKeywordRecord> { }
+    private class CorpusWordCountInfo : Dictionary<string, DbCorpusKeywordRecord> { }
 
     private void processIssues(SqliteConnection db)
     {
@@ -79,8 +78,8 @@ public class KeywordProcessor
         List<IssueRecord> issues = IssueRecord.SelectList(db);
         Console.WriteLine($"  Found {issues.Count} issues.");
 
-        Dictionary<int, BlockWordCountInfo> wordCountsByIssue = [];
-        BlockWordCountInfo totalWordCounts = [];
+        Dictionary<int, IssueWordCountInfo> wordCountsByIssue = [];
+        CorpusWordCountInfo totalWordCounts = [];
 
         int issueIndex = 0;
 
@@ -92,55 +91,66 @@ public class KeywordProcessor
             {
                 Console.WriteLine($"  Processing issue {issueIndex} of {issues.Count}, total unique words: {totalWordCounts.Count}...");
 
-                List<WordStats> top10 = totalWordCounts.Values.OrderByDescending(c => c.Count).Take(10).ToList();
-                Console.WriteLine("  - Top 10 words:");
-                foreach (WordStats ws in top10)
-                {
-                    Console.WriteLine($"    - Count: {ws.Count}: '{ws.Sanitized}'");
-                }
+                // List<DbCorpusKeywordRecord> top10 = totalWordCounts.Values.OrderByDescending(c => c.Count).Take(10).ToList();
+                // Console.WriteLine("  - Top 10 words:");
+                // foreach (DbCorpusKeywordRecord ws in top10)
+                // {
+                //     Console.WriteLine($"    - Count: {ws.Count}: '{ws.Keyword}'");
+                // }
             }
 
             // get any comments for this issue
             List<CommentRecord> comments = CommentRecord.SelectList(db, IssueId: issue.Id);
 
             // build the text to extract keywords from
-            BlockWordCountInfo issueWordCounts = [];
+            IssueWordCountInfo issueWordCounts = [];
 
             if (!string.IsNullOrWhiteSpace(issue.Title))
             {
-                countFromString(stripHtml(issue.Title), issueWordCounts, totalWordCounts);
+                countFromString(issue.Id, stripHtml(issue.Title), issueWordCounts, totalWordCounts);
             }
             if (!string.IsNullOrWhiteSpace(issue.Description))
             {
-                countFromString(stripHtml(issue.Description), issueWordCounts, totalWordCounts);
+                countFromString(issue.Id, stripHtml(issue.Description), issueWordCounts, totalWordCounts);
             }
             if (!string.IsNullOrWhiteSpace(issue.Summary))
             {
-                countFromString(stripHtml(issue.Summary), issueWordCounts, totalWordCounts);
+                countFromString(issue.Id, stripHtml(issue.Summary), issueWordCounts, totalWordCounts);
             }
             if (!string.IsNullOrWhiteSpace(issue.ResolutionDescription))
             {
-                countFromString(stripHtml(issue.ResolutionDescription), issueWordCounts, totalWordCounts);
+                countFromString(issue.Id, stripHtml(issue.ResolutionDescription), issueWordCounts, totalWordCounts);
             }
 
             foreach (CommentRecord comment in comments)
             {
                 if (!string.IsNullOrWhiteSpace(comment.Body))
                 {
-                    countFromString(stripHtml(comment.Body), issueWordCounts, totalWordCounts);
+                    countFromString(issue.Id, stripHtml(comment.Body), issueWordCounts, totalWordCounts);
                 }
             }
 
             wordCountsByIssue[issue.Id] = issueWordCounts;
         }
 
+        // traverse issues to insert into the database
+        foreach (IssueWordCountInfo issueWordCounts in wordCountsByIssue.Values)
+        {
+            // only insert the most frequent keywords
+            issueWordCounts.Values.OrderByDescending(wc => wc.Count).Take(_keywordsPerIssue).Insert(db);
+        }
+        
+        // insert all corpus keywords
+        totalWordCounts.Values.Insert(db);
+        
         return;
     }
 
     private void countFromString(
+        int issueId,
         string input,
-        BlockWordCountInfo issueWordCounts,
-        BlockWordCountInfo totalWordCounts)
+        IssueWordCountInfo issueWordCounts,
+        CorpusWordCountInfo totalWordCounts)
     {
         if (string.IsNullOrWhiteSpace(input))
         {
@@ -199,7 +209,7 @@ public class KeywordProcessor
             // filter FHIR element paths next
             if (_fhirElementPaths.Contains(sanitized))
             {
-                if (issueWordCounts.TryGetValue(sanitized, out WordStats? fwInfo))
+                if (issueWordCounts.TryGetValue(sanitized, out DbIssueKeywordRecord? fwInfo))
                 {
                     fwInfo.Count++;
                 }
@@ -207,14 +217,15 @@ public class KeywordProcessor
                 {
                     issueWordCounts[sanitized] = new()
                     {
-                        FirstOccurenceText = word,
-                        Sanitized = sanitized,
+                        Id = DbIssueKeywordRecord.GetIndex(),
+                        IssueId = issueId,
+                        Keyword = sanitized,
                         Count = 1,
                         KeywordType = KeywordTypeCodes.FhirElementPath,
                     };
                 }
 
-                if (totalWordCounts.TryGetValue(sanitized, out WordStats? tfwInfo))
+                if (totalWordCounts.TryGetValue(sanitized, out DbCorpusKeywordRecord? tfwInfo))
                 {
                     tfwInfo.Count++;
                 }
@@ -222,8 +233,8 @@ public class KeywordProcessor
                 {
                     totalWordCounts[sanitized] = new()
                     {
-                        FirstOccurenceText = word,
-                        Sanitized = sanitized,
+                        Id = DbCorpusKeywordRecord.GetIndex(),
+                        Keyword = sanitized,
                         Count = 1,
                         KeywordType = KeywordTypeCodes.FhirElementPath,
                     };
@@ -236,7 +247,7 @@ public class KeywordProcessor
             if ((word[0] == '$') &&
                 _fhirOperationNames.Contains(sanitized))
             {
-                if (issueWordCounts.TryGetValue(sanitized, out WordStats? owInfo))
+                if (issueWordCounts.TryGetValue(sanitized, out DbIssueKeywordRecord? owInfo))
                 {
                     owInfo.Count++;
                 }
@@ -244,13 +255,14 @@ public class KeywordProcessor
                 {
                     issueWordCounts[sanitized] = new()
                     {
-                        FirstOccurenceText = word,
-                        Sanitized = sanitized,
+                        Id = DbIssueKeywordRecord.GetIndex(),
+                        IssueId = issueId,
+                        Keyword = sanitized,
                         Count = 1,
                         KeywordType = KeywordTypeCodes.FhirOperationName,
                     };
                 }
-                if (totalWordCounts.TryGetValue(sanitized, out WordStats? towInfo))
+                if (totalWordCounts.TryGetValue(sanitized, out DbCorpusKeywordRecord? towInfo))
                 {
                     towInfo.Count++;
                 }
@@ -258,8 +270,8 @@ public class KeywordProcessor
                 {
                     totalWordCounts[sanitized] = new()
                     {
-                        FirstOccurenceText = word,
-                        Sanitized = sanitized,
+                        Id = DbCorpusKeywordRecord.GetIndex(),
+                        Keyword = sanitized,
                         Count = 1,
                         KeywordType = KeywordTypeCodes.FhirOperationName,
                     };
@@ -270,7 +282,7 @@ public class KeywordProcessor
             // check for a lemma
             if (_lemmas.TryGetValue(sanitized, out string? lemma))
             {
-                if (issueWordCounts.TryGetValue(lemma, out WordStats? lwInfo))
+                if (issueWordCounts.TryGetValue(lemma, out DbIssueKeywordRecord? lwInfo))
                 {
                     lwInfo.Count++;
                 }
@@ -278,14 +290,15 @@ public class KeywordProcessor
                 {
                     issueWordCounts[lemma] = new()
                     {
-                        FirstOccurenceText = word,
-                        Sanitized = lemma,
+                        Id = DbIssueKeywordRecord.GetIndex(),
+                        IssueId = issueId,
+                        Keyword = lemma,
                         Count = 1,
                         KeywordType = KeywordTypeCodes.Word,
                     };
                 }
 
-                if (totalWordCounts.TryGetValue(lemma, out WordStats? tlwInfo))
+                if (totalWordCounts.TryGetValue(lemma, out DbCorpusKeywordRecord? tlwInfo))
                 {
                     tlwInfo.Count++;
                 }
@@ -293,8 +306,8 @@ public class KeywordProcessor
                 {
                     totalWordCounts[lemma] = new()
                     {
-                        FirstOccurenceText = word,
-                        Sanitized = lemma,
+                        Id = DbCorpusKeywordRecord.GetIndex(),
+                        Keyword = lemma,
                         Count = 1,
                         KeywordType = KeywordTypeCodes.Word,
                     };
@@ -303,7 +316,7 @@ public class KeywordProcessor
             }
 
             // finally, process as a normal word
-            if (issueWordCounts.TryGetValue(sanitized, out WordStats? wInfo))
+            if (issueWordCounts.TryGetValue(sanitized, out DbIssueKeywordRecord? wInfo))
             {
                 wInfo.Count++;
             }
@@ -311,14 +324,15 @@ public class KeywordProcessor
             {
                 issueWordCounts[sanitized] = new()
                 {
-                    FirstOccurenceText = word,
-                    Sanitized = sanitized,
+                    Id = DbIssueKeywordRecord.GetIndex(),
+                    IssueId = issueId,
+                    Keyword = sanitized,
                     Count = 1,
                     KeywordType = KeywordTypeCodes.Word,
                 };
             }
 
-            if (totalWordCounts.TryGetValue(sanitized, out WordStats? twInfo))
+            if (totalWordCounts.TryGetValue(sanitized, out DbCorpusKeywordRecord? twInfo))
             {
                 twInfo.Count++;
             }
@@ -326,8 +340,8 @@ public class KeywordProcessor
             {
                 totalWordCounts[sanitized] = new()
                 {
-                    FirstOccurenceText = word,
-                    Sanitized = sanitized,
+                    Id = DbCorpusKeywordRecord.GetIndex(),
+                    Keyword = sanitized,
                     Count = 1,
                     KeywordType = KeywordTypeCodes.Word,
                 };

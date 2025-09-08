@@ -33,6 +33,12 @@ internal class FtsProcessor
         IssueFtsRecord.CreateTable(connection);
         count = IssueFtsRecord.Populate(connection, sanitizeText: true);
         Console.WriteLine($"  Indexed {count} issues.");
+        
+        Console.WriteLine("Processing AI summaries...");
+        AiIssueFtsRecord.DropTable(connection);
+        AiIssueFtsRecord.CreateTable(connection);
+        count = AiIssueFtsRecord.Populate(connection, sanitizeText: true);
+        Console.WriteLine($"  Indexed {count} AI summaries.");
 
         Console.WriteLine("Processing comments...");
         CommentFtsRecord.DropTable(connection);

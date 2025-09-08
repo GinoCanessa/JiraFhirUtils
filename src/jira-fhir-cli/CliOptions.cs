@@ -7,12 +7,12 @@ namespace jira_fhir_cli;
 
 public record class CliOptions
 {
-    public static readonly List<(string, Command)> Commands = new()
-    {
-        ( CliLoadXmlCommand.CommandName, new CliLoadXmlCommand() ),
-        ( CliBuildFtsCommand.CommandName, new CliBuildFtsCommand() ),
-        ( CliExtractKewordsCommand.CommandName, new CliExtractKewordsCommand() ),
-    };
+    public static readonly List<(string, Command)> Commands = [
+        (CliLoadXmlCommand.CommandName, new CliLoadXmlCommand()),
+        (CliBuildFtsCommand.CommandName, new CliBuildFtsCommand()),
+        (CliExtractKeywordsCommand.CommandName, new CliExtractKeywordsCommand()),
+        (CliSummarizeCommand.CommandName, new CliSummarizeCommand()),
+    ];
 
     public Option<string?> DbPath { get; set; } = new Option<string?>("--db-path")
     {
@@ -57,9 +57,9 @@ public record class CliOptions
     public Option<string> KeywordDatabase { get; set; } = new Option<string>(
         "--keyword-database")
     {
-        Description = "Path to a SQLite database with auxilary data for processing keywords.",
+        Description = "Path to a SQLite database with auxiliary data for processing keywords.",
         Arity = ArgumentArity.ZeroOrOne,
-        DefaultValueFactory = (ar) => "text_aux.sqlite",
+        DefaultValueFactory = (ar) => "auxiliary.sqlite",
     };
 }
 
@@ -164,16 +164,28 @@ public class CliBuildFtsCommand : Command
     }
 }
 
-public class CliExtractKewordsCommand : Command
+public class CliExtractKeywordsCommand : Command
 {
     public const string CommandName = "extract-keywords";
     private CliOptions _cliOptions = new();
     public CliOptions CommandCliOptions => _cliOptions;
-    public CliExtractKewordsCommand() : base(CommandName, "Extract and display keywords from the issues in the database.")
+    public CliExtractKeywordsCommand() : base(CommandName, "Extract and display keywords from the issues in the database.")
     {
         // Add options defined in CliOptions
         this.Add(_cliOptions.DbPath);
         this.Add(_cliOptions.FhirSpecDatabase);
         this.Add(_cliOptions.KeywordDatabase);
+    }
+}
+
+public class CliSummarizeCommand : Command
+{
+    public const string CommandName = "summarize";
+    private CliOptions _cliOptions = new();
+    public CliOptions CommandCliOptions => _cliOptions;
+    public CliSummarizeCommand() : base(CommandName, "Create summaries of issues, comments, and resolutions.")
+    {
+        // Add options defined in CliOptions
+        this.Add(_cliOptions.DbPath);
     }
 }

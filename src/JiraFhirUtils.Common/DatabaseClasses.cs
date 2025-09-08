@@ -103,6 +103,10 @@ public partial record class IssueRecord
     public required string? WorkGroup { get; set; }
     public required string? SelectedBallot { get; set; }
     public required string? RequestInPerson { get; set; }
+    
+    public required string? AiIssueSummary { get; set; }
+    public required string? AiCommentSummary { get; set; }
+    public required string? AiResolutionSummary { get; set; }
 }
 
 /// <summary>

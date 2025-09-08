@@ -27,7 +27,7 @@ internal class Program
                 case CliBuildFtsCommand.CommandName:
                     cmd.SetAction(FtsCommandHandler);
                     break;
-                case CliExtractKewordsCommand.CommandName:
+                case CliExtractKeywordsCommand.CommandName:
                     cmd.SetAction(KeywordCommandHandler);
                     break;
             }
@@ -90,7 +90,7 @@ internal class Program
 
     private static async void KeywordCommandHandler(ParseResult pr)
     {
-        if (pr.CommandResult.Command is not CliExtractKewordsCommand kc)
+        if (pr.CommandResult.Command is not CliExtractKeywordsCommand kc)
         {
             Console.WriteLine("Incorrect mapping from command to command handler!");
             _retVal = 1;

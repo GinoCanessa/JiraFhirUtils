@@ -75,6 +75,10 @@ public static class XmlToDatabaseExtensions
             WorkGroup = null,
             SelectedBallot = null,
             RequestInPerson = null,
+            
+            AiIssueSummary = null,
+            AiCommentSummary = null,
+            AiResolutionSummary = null,
         };
     }
 
