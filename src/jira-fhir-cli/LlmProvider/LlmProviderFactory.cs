@@ -19,7 +19,7 @@ public static class LlmProviderFactory
             LlmProviderType.Ollama => 
                 throw new NotSupportedException("Ollama provider not yet implemented"),
             LlmProviderType.AzureOpenAI => 
-                throw new NotSupportedException("AzureOpenAI provider not yet implemented"),
+                new AzureOpenAIProvider(config),
             LlmProviderType.GoogleAI => 
                 throw new NotSupportedException("GoogleAI provider not yet implemented"),
             _ => throw new NotSupportedException($"Provider {config.ProviderType} not supported")
@@ -103,6 +103,49 @@ public static class LlmProviderFactory
             Model = model,
             Temperature = 0.3,
             MaxTokens = 500
+        };
+    }
+    
+    public static LlmConfiguration CreateDefaultAzureOpenAIConfig(string apiKey, string resourceName, string deploymentName, string model = "gpt-4o-mini")
+    {
+        return new LlmConfiguration
+        {
+            ProviderType = LlmProviderType.AzureOpenAI,
+            ApiEndpoint = $"https://{resourceName}.openai.azure.com/",
+            ApiKey = apiKey,
+            Model = model,
+            ApiVersion = "2024-08-01-preview",
+            Temperature = 0.3,
+            MaxTokens = 500,
+            DeploymentName = deploymentName,
+            ResourceName = resourceName,
+            UseDefaultAzureCredential = false,
+            ProviderSpecificSettings = new Dictionary<string, object>
+            {
+                ["DeploymentName"] = deploymentName,
+                ["ResourceName"] = resourceName
+            }
+        };
+    }
+    
+    public static LlmConfiguration CreateDefaultAzureOpenAIConfigWithManagedIdentity(string resourceName, string deploymentName, string model = "gpt-4o-mini")
+    {
+        return new LlmConfiguration
+        {
+            ProviderType = LlmProviderType.AzureOpenAI,
+            ApiEndpoint = $"https://{resourceName}.openai.azure.com/",
+            Model = model,
+            ApiVersion = "2024-08-01-preview",
+            Temperature = 0.3,
+            MaxTokens = 500,
+            DeploymentName = deploymentName,
+            ResourceName = resourceName,
+            UseDefaultAzureCredential = true,
+            ProviderSpecificSettings = new Dictionary<string, object>
+            {
+                ["DeploymentName"] = deploymentName,
+                ["ResourceName"] = resourceName
+            }
         };
     }
     

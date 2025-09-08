@@ -98,6 +98,43 @@ public class AiSummaryProcessor
             case "ollama":
                 llmConfig = LlmProviderFactory.CreateDefaultOllamaConfig(config.LlmModel ?? "llama2", config.LlmApiEndpoint ?? "http://localhost:11434");
                 break;
+            case "azureopenai":
+                string? azureApiKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+                string? azureDeployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT");
+                string? azureResource = Environment.GetEnvironmentVariable("AZURE_OPENAI_RESOURCE");
+                
+                if (string.IsNullOrEmpty(azureDeployment))
+                {
+                    throw new InvalidOperationException("AZURE_OPENAI_DEPLOYMENT environment variable is required for Azure OpenAI provider");
+                }
+                
+                if (string.IsNullOrEmpty(azureApiKey) && string.IsNullOrEmpty(config.LlmApiEndpoint) && string.IsNullOrEmpty(azureResource))
+                {
+                    throw new InvalidOperationException("Either AZURE_OPENAI_API_KEY or a valid endpoint/resource configuration is required for Azure OpenAI provider");
+                }
+                
+                // Use deployment name as model if not overridden
+                string model = config.LlmModel ?? azureDeployment;
+                
+                // Determine the endpoint
+                string endpoint = config.LlmApiEndpoint ?? 
+                    (!string.IsNullOrEmpty(azureResource) ? $"https://{azureResource}.openai.azure.com/" : "https://placeholder.openai.azure.com/");
+                
+                llmConfig = new LlmConfiguration
+                {
+                    ProviderType = LlmProviderType.AzureOpenAI,
+                    ApiEndpoint = endpoint,
+                    ApiKey = azureApiKey,
+                    Model = model,
+                    Temperature = 0.3,
+                    MaxTokens = 500,
+                    ProviderSpecificSettings = new Dictionary<string, object>
+                    {
+                        ["DeploymentName"] = azureDeployment,
+                        ["ResourceName"] = azureResource ?? ""
+                    }
+                };
+                break;
             default:
                 throw new ArgumentException($"Unknown LLM provider: {providerName}");
         }

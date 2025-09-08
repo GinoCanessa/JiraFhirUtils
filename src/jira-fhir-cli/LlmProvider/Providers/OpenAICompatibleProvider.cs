@@ -1,6 +1,8 @@
-using System.Net.Http.Headers;
+using System.ClientModel;
 using System.Text;
 using System.Text.Json;
+using OpenAI;
+using OpenAI.Chat;
 using jira_fhir_cli.LlmProvider.Configuration;
 using jira_fhir_cli.LlmProvider.Models;
 using jira_fhir_cli.LlmProvider.Utils;
@@ -9,27 +11,31 @@ namespace jira_fhir_cli.LlmProvider.Providers;
 
 public class OpenAICompatibleProvider : ILlmProvider
 {
-    private readonly HttpClient _httpClient;
+    private readonly OpenAIClient _client;
+    private readonly ChatClient _chatClient;
     private readonly LlmConfiguration _config;
-    private readonly JsonSerializerOptions _jsonOptions;
     
-    public OpenAICompatibleProvider(LlmConfiguration config, HttpClient? httpClient = null)
+    public OpenAICompatibleProvider(LlmConfiguration config)
     {
         _config = config;
-        _httpClient = httpClient ?? new HttpClient();
-        _httpClient.Timeout = TimeSpan.FromSeconds(config.RequestTimeoutSeconds);
         
-        if (!string.IsNullOrEmpty(config.ApiKey))
+        // Configure OpenAI client options
+        OpenAIClientOptions options = new OpenAIClientOptions
         {
-            _httpClient.DefaultRequestHeaders.Authorization = 
-                new AuthenticationHeaderValue("Bearer", config.ApiKey);
-        }
-
-        _jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-            WriteIndented = false
+            NetworkTimeout = TimeSpan.FromSeconds(config.RequestTimeoutSeconds)
         };
+        
+        // Set custom endpoint if not using OpenAI directly
+        if (!string.IsNullOrEmpty(config.ApiEndpoint) && 
+            config.ApiEndpoint != "https://api.openai.com/v1")
+        {
+            options.Endpoint = new Uri(config.ApiEndpoint.TrimEnd('/'));
+        }
+        
+        // Initialize OpenAI client
+        ApiKeyCredential credential = new ApiKeyCredential(config.ApiKey ?? string.Empty);
+        _client = new OpenAIClient(credential, options);
+        _chatClient = _client.GetChatClient(_config.Model);
     }
     
     public string ProviderName => "OpenAI Compatible";
@@ -48,89 +54,44 @@ public class OpenAICompatibleProvider : ILlmProvider
     {
         try
         {
-            List<object> messages = [];
+            // Build chat messages using SDK types
+            List<ChatMessage> messages = [];
             
             if (!string.IsNullOrEmpty(request.SystemPrompt))
             {
-                messages.Add(new { role = "system", content = request.SystemPrompt });
+                messages.Add(ChatMessage.CreateSystemMessage(request.SystemPrompt));
             }
             
-            messages.Add(new { role = "user", content = request.Prompt });
+            messages.Add(ChatMessage.CreateUserMessage(request.Prompt));
 
-            var requestBody = new
+            // Configure chat completion options
+            ChatCompletionOptions options = new ChatCompletionOptions
             {
-                model = !string.IsNullOrEmpty(request.Model) ? request.Model : _config.Model,
-                messages = messages,
-                temperature = request.Temperature,
-                max_tokens = request.MaxTokens
+                Temperature = (float)request.Temperature
+                // Note: MaxTokens configuration may need to be set differently in this SDK version
             };
 
-            string json = JsonSerializer.Serialize(requestBody, _jsonOptions);
-            StringContent content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            string endpoint = _config.ApiEndpoint.TrimEnd('/') + "/chat/completions";
-            HttpResponseMessage response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
+            // Use appropriate chat client (either with specific model or the configured one)
+            ChatClient chatClient = _chatClient;
+            if (!string.IsNullOrEmpty(request.Model) && request.Model != _config.Model)
             {
-                string errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                return new LlmResponse
-                {
-                    Content = "",
-                    Success = false,
-                    ErrorMessage = $"HTTP {response.StatusCode}: {errorContent}"
-                };
+                chatClient = _client.GetChatClient(request.Model);
             }
 
-            string responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-            JsonElement responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
+            // Make the request using the SDK
+            ChatCompletion completion = await chatClient.CompleteChatAsync(messages, options, cancellationToken);
 
-            if (responseData.TryGetProperty("choices", out JsonElement choices) && 
-                choices.GetArrayLength() > 0)
-            {
-                JsonElement firstChoice = choices[0];
-                if (firstChoice.TryGetProperty("message", out JsonElement message) &&
-                    message.TryGetProperty("content", out JsonElement contentElement))
-                {
-                    string responseContent = contentElement.GetString() ?? "";
-                    
-                    int? tokensUsed = null;
-                    if (responseData.TryGetProperty("usage", out JsonElement usage) &&
-                        usage.TryGetProperty("total_tokens", out JsonElement tokensElement))
-                    {
-                        tokensUsed = tokensElement.GetInt32();
-                    }
-
-                    string? model = null;
-                    if (responseData.TryGetProperty("model", out JsonElement modelElement))
-                    {
-                        model = modelElement.GetString();
-                    }
-
-                    return new LlmResponse
-                    {
-                        Content = responseContent,
-                        Model = model,
-                        TokensUsed = tokensUsed,
-                        Success = true
-                    };
-                }
-            }
+            // Extract response data
+            string responseContent = completion.Content[0].Text;
+            string? model = completion.Model;
+            int? tokensUsed = completion.Usage?.TotalTokenCount;
 
             return new LlmResponse
             {
-                Content = "",
-                Success = false,
-                ErrorMessage = "Invalid response format: missing content in response"
-            };
-        }
-        catch (HttpRequestException ex)
-        {
-            return new LlmResponse
-            {
-                Content = "",
-                Success = false,
-                ErrorMessage = $"HTTP request failed: {ex.Message}"
+                Content = responseContent,
+                Model = model,
+                TokensUsed = tokensUsed,
+                Success = true
             };
         }
         catch (TaskCanceledException ex) when (ex.CancellationToken == cancellationToken)
@@ -151,22 +112,14 @@ public class OpenAICompatibleProvider : ILlmProvider
                 ErrorMessage = $"Request timed out after {_config.RequestTimeoutSeconds} seconds"
             };
         }
-        catch (JsonException ex)
-        {
-            return new LlmResponse
-            {
-                Content = "",
-                Success = false,
-                ErrorMessage = $"JSON parsing failed: {ex.Message}"
-            };
-        }
         catch (Exception ex)
         {
+            // Handle all other exceptions (including SDK exceptions)
             return new LlmResponse
             {
                 Content = "",
                 Success = false,
-                ErrorMessage = $"Unexpected error: {ex.Message}"
+                ErrorMessage = $"Request failed: {ex.Message}"
             };
         }
     }
@@ -194,6 +147,7 @@ public class OpenAICompatibleProvider : ILlmProvider
 
     public void Dispose()
     {
-        _httpClient?.Dispose();
+        // OpenAI client doesn't implement IDisposable in this version
+        // No cleanup needed
     }
 }

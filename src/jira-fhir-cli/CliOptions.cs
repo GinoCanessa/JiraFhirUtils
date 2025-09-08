@@ -70,7 +70,7 @@ public record class CliOptions
 
     public Option<string?> LlmProvider { get; set; } = new Option<string?>("--llm-provider")
     {
-        Description = "LLM provider (openai, lmstudio, anthropic, ollama).",
+        Description = "LLM provider (openai, lmstudio, anthropic, ollama, azureopenai).",
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => "lmstudio",
     };

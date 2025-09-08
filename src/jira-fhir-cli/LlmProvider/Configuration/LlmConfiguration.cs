@@ -14,6 +14,12 @@ public record class LlmConfiguration
     public int RequestTimeoutSeconds { get; init; } = 30;
     public int MaxRetries { get; init; } = 3;
     public int RetryDelaySeconds { get; init; } = 2;
+    
+    // Azure OpenAI specific properties
+    public string? DeploymentName { get; init; } = null;
+    public string? ResourceName { get; init; } = null;
+    public bool UseDefaultAzureCredential { get; init; } = false;
+    
     public Dictionary<string, object> ProviderSpecificSettings { get; init; } = new();
 }
 
