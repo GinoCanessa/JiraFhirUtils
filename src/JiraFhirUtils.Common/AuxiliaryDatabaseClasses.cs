@@ -19,6 +19,8 @@ public partial record class LemmaRecord
 }
 
 [JfSQLiteTable("issue_keywords")]
+[JfSQLiteIndex(nameof(IssueId), nameof(Count))]
+[JfSQLiteIndex(nameof(IssueId), nameof(KeywordType), nameof(Count))]
 public partial record class DbIssueKeywordRecord
 {
     [JfSQLiteKey]
@@ -33,6 +35,9 @@ public partial record class DbIssueKeywordRecord
 }
 
 [JfSQLiteTable("corpus_keywords")]
+[JfSQLiteIndex(nameof(Keyword))]
+[JfSQLiteIndex(nameof(Count))]
+[JfSQLiteIndex(nameof(KeywordType), nameof(Count))]
 public partial record class DbCorpusKeywordRecord
 {
     [JfSQLiteKey]
