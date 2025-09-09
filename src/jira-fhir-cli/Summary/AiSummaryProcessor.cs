@@ -6,15 +6,18 @@ namespace jira_fhir_cli.Summary;
 
 public class AiSummaryProcessor
 {
+    private const int _maxParallelism = 10;
     private readonly CliConfig _config;
-    private readonly ISemanticKernelService _llmService;
+    private readonly ILlmService _llmService;
 
     private static System.Text.RegularExpressions.Regex _htmlStripRegex = new("<.*?>", System.Text.RegularExpressions.RegexOptions.Compiled);
+    
+    private Lock _updateLock = new();
 
     public AiSummaryProcessor(CliConfig config)
     {
         _config = config;
-        _llmService = SemanticKernelServiceFactory.CreateService(_config);
+        _llmService = LlmServiceFactory.CreateService(_config);
     }
 
     public async Task ProcessAsync()
@@ -48,7 +51,7 @@ public class AiSummaryProcessor
         for (int i = 0; i < issuesToProcess.Count; i += _config.BatchSize)
         {
             List<IssueRecord> batch = issuesToProcess.Skip(i).Take(_config.BatchSize).ToList();
-            await processBatch(connection, batch);
+            processBatch(connection, batch);
             
             Console.WriteLine($"Processed {Math.Min(i + _config.BatchSize, issuesToProcess.Count)}/{issuesToProcess.Count} issues");
         }
@@ -88,31 +91,31 @@ public class AiSummaryProcessor
         return issues;
     }
 
-    private async Task processBatch(SqliteConnection db, List<IssueRecord> issues)
+    private void processBatch(SqliteConnection db, List<IssueRecord> issues)
     {
-        foreach (IssueRecord issue in issues)
+        Parallel.ForEach(issues, new ParallelOptions() { MaxDegreeOfParallelism = _maxParallelism}, issue =>
         {
             try
             {
                 Console.WriteLine($"Processing issue {issue.Key}...");
-                await processSingleIssue(db, issue);
+                processSingleIssue(db, issue);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error processing issue {issue.Key}: {ex.Message}");
                 // Continue with next issue
             }
-        }
+        });
     }
 
-    private async Task processSingleIssue(SqliteConnection db, IssueRecord issue)
+    private void processSingleIssue(SqliteConnection db, IssueRecord issue)
     {
         bool updateIssue = false;
 
         // Generate issue summary
         if ((issue.AiIssueSummary == null || _config.OverwriteSummaries))
         {
-            string? issueSummary = await generateIssueSummary(issue);
+            string? issueSummary = generateIssueSummary(issue).Result;
             if (issueSummary != null)
             {
                 issue.AiIssueSummary = issueSummary;
@@ -124,7 +127,7 @@ public class AiSummaryProcessor
         // Generate comment summary
         if ((issue.AiCommentSummary == null || _config.OverwriteSummaries))
         {
-            string? commentSummary = await generateCommentSummary(db, issue.Id);
+            string? commentSummary = generateCommentSummary(db, issue.Id).Result;
             if (commentSummary != null)
             {
                 issue.AiCommentSummary = commentSummary;
@@ -136,7 +139,7 @@ public class AiSummaryProcessor
         // Generate resolution summary
         if ((issue.AiResolutionSummary == null || _config.OverwriteSummaries))
         {
-            string? resolutionSummary = await generateResolutionSummary(issue);
+            string? resolutionSummary = generateResolutionSummary(issue).Result;
             if (resolutionSummary != null)
             {
                 issue.AiResolutionSummary = resolutionSummary;
@@ -148,7 +151,10 @@ public class AiSummaryProcessor
         // Update database if we have any summaries
         if (updateIssue)
         {
-            issue.Update(db);
+            lock (_updateLock)
+            {
+                issue.Update(db);
+            }
         }
     }
     

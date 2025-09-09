@@ -1,14 +1,13 @@
-
 namespace jira_fhir_cli.LlmProvider;
 
 /// <summary>
-/// Service interface for Microsoft Semantic Kernel integration that maintains compatibility 
-/// with the existing LlmRequest/LlmResponse patterns while providing SK-based implementations.
+/// Service interface for LLM integration using OpenAI SDK that maintains compatibility 
+/// with the existing LlmRequest/LlmResponse patterns.
 /// </summary>
-public interface ISemanticKernelService
+public interface ILlmService
 {
     /// <summary>
-    /// Generate a response using the configured Semantic Kernel chat completion service
+    /// Generate a response using the configured LLM chat completion service
     /// </summary>
     /// <param name="request">LLM request containing prompt, system message, and parameters</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -16,14 +15,14 @@ public interface ISemanticKernelService
     Task<LlmResponse> GenerateAsync(LlmRequest request, CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Validate that the SK service is properly configured and can connect to the provider
+    /// Validate that the LLM service is properly configured and can connect to the provider
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>True if connection is successful</returns>
     Task<bool> ValidateConnectionAsync(CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Gets the name of the provider (e.g., "OpenAI", "Azure OpenAI", "Anthropic")
+    /// Gets the name of the provider (e.g., "OpenAI", "Azure OpenAI", "OpenAI-Compatible")
     /// </summary>
     string ProviderName { get; }
     
@@ -31,9 +30,4 @@ public interface ISemanticKernelService
     /// Indicates whether the provider supports streaming responses
     /// </summary>
     bool SupportsStreaming { get; }
-    
-    /// <summary>
-    /// Gets the underlying kernel instance for advanced scenarios
-    /// </summary>
-    Microsoft.SemanticKernel.Kernel Kernel { get; }
 }

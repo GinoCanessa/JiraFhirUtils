@@ -73,7 +73,7 @@ public record class CliOptions
     
     public Option<string?> LlmProvider { get; set; } = new Option<string?>("--llm-provider")
     {
-        Description = "LLM provider (openai, openrouter, lmstudio, anthropic, ollama, azureopenai).",
+        Description = "LLM provider (openai, openrouter, lmstudio, azureopenai). Default: openai-compatible.",
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => null,
     };
@@ -134,12 +134,6 @@ public record class CliOptions
         DefaultValueFactory = (ar) => null,
     };
     
-    public Option<string?> SemanticKernelServiceId { get; set; } = new Option<string?>("--semantic-kernel-service-id")
-    {
-        Description = "Semantic Kernel service ID (if using Semantic Kernel).",
-        Arity = ArgumentArity.ZeroOrOne,
-        DefaultValueFactory = (ar) => null,
-    };
 
     public Option<bool> OverwriteSummaries { get; set; } = new Option<bool>("--overwrite")
     {
@@ -174,7 +168,6 @@ public record class CliConfig
     public int LlmMaxTokens { get; init; }
     public string? LlmDeploymentName { get; init; }
     public string? LlmResourceName { get; init; }
-    public string? SemanticKernelServiceId { get; init; }
     public bool OverwriteSummaries { get; init; }
     public int BatchSize { get; init; }
     public IConfiguration Configuration { get; init; }
@@ -252,21 +245,17 @@ public record class CliConfig
         LlmDeploymentName = pr.GetValue(opt.LlmDeploymentName);
         LlmResourceName = pr.GetValue(opt.LlmResourceName);
         LlmApiKey = pr.GetValue(opt.LlmApiKey) ?? getApiKey(LlmProvider ?? string.Empty);
-        SemanticKernelServiceId = pr.GetValue(opt.SemanticKernelServiceId);
     }
 
     private string? getDefaultApiEndpoint(string? provider) => provider?.ToLowerInvariant() switch
     {
-        "openai" => "https://api.openai.com/v1/chat/completions",
-        "openrouter" => "https://api.openrouter.ai/v1/chat/completions",
-        "anthropic" => "https://api.anthropic.com/v1/chat/completions",
+        "openai" => "https://api.openai.com/api/v1",
+        "openrouter" => "https://openrouter.ai/api/v1",
         "azure" => null,
         "azureopenai" => null, // Azure OpenAI endpoints are resource-specific
-        "lmstudio" => "http://localhost:1234/v1/chat/completions",
-        "ollama" => "http://localhost:11434/chat",
-        "google" => null,
-        "googleai" => null,
-        _ => "https://api.openrouter.ai/v1/chat/completions"
+        "lmstudio" => "http://localhost:1234/api/v1",
+        "ollama" => "http://localhost:11434/api/v1",
+        _ => "https://openrouter.ai/api/v1"
     };
 
     /// <summary>
@@ -367,7 +356,6 @@ public class CliSummarizeCommand : Command
         this.Add(_cliOptions.LlmMaxTokens);
         this.Add(_cliOptions.LlmDeploymentName);
         this.Add(_cliOptions.LlmResourceName);
-        this.Add(_cliOptions.SemanticKernelServiceId);
         this.Add(_cliOptions.OverwriteSummaries);
         this.Add(_cliOptions.BatchSize);
     }

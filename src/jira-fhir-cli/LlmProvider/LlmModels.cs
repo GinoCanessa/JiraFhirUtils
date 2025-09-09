@@ -24,10 +24,6 @@ public enum LlmProviderType
 {
     OpenAi,
     OpenAiCompatible,
-    // Anthropic,
-    Ollama,
-    AzureOpenAi,
-    GoogleAi,
 }
 
 public static class LlmModelExtensions
@@ -36,12 +32,6 @@ public static class LlmModelExtensions
         provider.ToLowerInvariant() switch
         {
             "openai" => LlmProviderType.OpenAi,
-            "azure" => LlmProviderType.AzureOpenAi,
-            "azureopenai" => LlmProviderType.AzureOpenAi,
-            // "anthropic" => LlmProviderType.Anthropic,
-            "ollama" => LlmProviderType.Ollama,
-            "google" => LlmProviderType.GoogleAi,
-            "googleai" => LlmProviderType.GoogleAi,
             _ => LlmProviderType.OpenAiCompatible
         };
 }
