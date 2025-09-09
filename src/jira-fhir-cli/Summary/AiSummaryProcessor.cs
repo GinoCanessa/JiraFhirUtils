@@ -9,7 +9,7 @@ namespace jira_fhir_cli.Summary;
 public class AiSummaryProcessor
 {
     private readonly CliConfig _config;
-    private readonly ILlmProvider _llmProvider;
+    private readonly ISemanticKernelService _llmService;
     private readonly SummaryConfiguration _summaryConfig;
     private readonly PromptTemplates _prompts;
 
@@ -19,19 +19,19 @@ public class AiSummaryProcessor
     {
         _config = config;
         _summaryConfig = createSummaryConfiguration(config);
-        _llmProvider = LlmProviderFactory.CreateProvider(_summaryConfig.LlmConfig);
+        _llmService = SemanticKernelServiceFactory.CreateService(_summaryConfig.LlmConfig);
         _prompts = _summaryConfig.Prompts;
     }
 
     public async Task ProcessAsync()
     {
         Console.WriteLine("Starting AI Summarization process...");
-        Console.WriteLine($"Using provider: {_llmProvider.ProviderName}");
+        Console.WriteLine($"Using provider: {_llmService.ProviderName}");
         Console.WriteLine($"Using database: {_config.DbPath}");
         
         // Test connection first
         Console.WriteLine("Testing LLM connection...");
-        if (!await _llmProvider.ValidateConnectionAsync())
+        if (!await _llmService.ValidateConnectionAsync())
         {
             throw new Exception("Failed to connect to LLM provider. Please check your configuration.");
         }
@@ -67,7 +67,7 @@ public class AiSummaryProcessor
         // If a configuration file is provided, load from file
         if (!string.IsNullOrEmpty(config.LlmConfigPath))
         {
-            return LlmProviderFactory.CreateSummaryConfigurationFromFile(config.LlmConfigPath);
+            return SemanticKernelServiceFactory.CreateSummaryConfigurationFromFile(config.LlmConfigPath);
         }
 
         // Otherwise, create from CLI options
@@ -77,7 +77,7 @@ public class AiSummaryProcessor
         switch (providerName)
         {
             case "lmstudio":
-                llmConfig = LlmProviderFactory.CreateDefaultLMStudioConfig();
+                llmConfig = SemanticKernelServiceFactory.CreateDefaultLMStudioConfig();
                 break;
             case "openai":
                 string? apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -85,18 +85,19 @@ public class AiSummaryProcessor
                 {
                     throw new InvalidOperationException("OPENAI_API_KEY environment variable is required for OpenAI provider");
                 }
-                llmConfig = LlmProviderFactory.CreateDefaultOpenAIConfig(apiKey, config.LlmModel ?? "gpt-4o-mini");
+                llmConfig = SemanticKernelServiceFactory.CreateDefaultOpenAIConfig(apiKey, config.LlmModel ?? "gpt-4o-mini");
                 break;
             case "anthropic":
-                string? claudeKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-                if (string.IsNullOrEmpty(claudeKey))
+                string? awsAccessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID");
+                if (string.IsNullOrEmpty(awsAccessKey))
                 {
-                    throw new InvalidOperationException("ANTHROPIC_API_KEY environment variable is required for Anthropic provider");
+                    throw new InvalidOperationException("AWS_ACCESS_KEY_ID environment variable is required for Anthropic provider (via AWS Bedrock)");
                 }
-                llmConfig = LlmProviderFactory.CreateDefaultAnthropicConfig(claudeKey, config.LlmModel ?? "claude-3-haiku-20240307");
+                // AWS secret key will be read from environment by the factory
+                llmConfig = SemanticKernelServiceFactory.CreateDefaultAnthropicConfig(awsAccessKey, config.LlmModel ?? "anthropic.claude-3-haiku-20240307-v1:0");
                 break;
             case "ollama":
-                llmConfig = LlmProviderFactory.CreateDefaultOllamaConfig(config.LlmModel ?? "llama2", config.LlmApiEndpoint ?? "http://localhost:11434");
+                llmConfig = SemanticKernelServiceFactory.CreateDefaultOllamaConfig(config.LlmModel ?? "llama2", config.LlmApiEndpoint ?? "http://localhost:11434");
                 break;
             case "azureopenai":
                 string? azureApiKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
@@ -108,32 +109,23 @@ public class AiSummaryProcessor
                     throw new InvalidOperationException("AZURE_OPENAI_DEPLOYMENT environment variable is required for Azure OpenAI provider");
                 }
                 
-                if (string.IsNullOrEmpty(azureApiKey) && string.IsNullOrEmpty(config.LlmApiEndpoint) && string.IsNullOrEmpty(azureResource))
+                if (string.IsNullOrEmpty(azureResource))
                 {
-                    throw new InvalidOperationException("Either AZURE_OPENAI_API_KEY or a valid endpoint/resource configuration is required for Azure OpenAI provider");
+                    throw new InvalidOperationException("AZURE_OPENAI_RESOURCE environment variable is required for Azure OpenAI provider");
                 }
                 
                 // Use deployment name as model if not overridden
                 string model = config.LlmModel ?? azureDeployment;
                 
-                // Determine the endpoint
-                string endpoint = config.LlmApiEndpoint ?? 
-                    (!string.IsNullOrEmpty(azureResource) ? $"https://{azureResource}.openai.azure.com/" : "https://placeholder.openai.azure.com/");
-                
-                llmConfig = new LlmConfiguration
+                // Create configuration using factory methods
+                if (!string.IsNullOrEmpty(azureApiKey))
                 {
-                    ProviderType = LlmProviderType.AzureOpenAI,
-                    ApiEndpoint = endpoint,
-                    ApiKey = azureApiKey,
-                    Model = model,
-                    Temperature = 0.3,
-                    MaxTokens = 500,
-                    ProviderSpecificSettings = new Dictionary<string, object>
-                    {
-                        ["DeploymentName"] = azureDeployment,
-                        ["ResourceName"] = azureResource ?? ""
-                    }
-                };
+                    llmConfig = SemanticKernelServiceFactory.CreateDefaultAzureOpenAIConfig(azureApiKey, azureResource, azureDeployment, model);
+                }
+                else
+                {
+                    llmConfig = SemanticKernelServiceFactory.CreateDefaultAzureOpenAIConfigWithManagedIdentity(azureResource, azureDeployment, model);
+                }
                 break;
             default:
                 throw new ArgumentException($"Unknown LLM provider: {providerName}");
@@ -292,7 +284,7 @@ public class AiSummaryProcessor
             Model = _summaryConfig.LlmConfig.Model
         };
         
-        LlmResponse response = await _llmProvider.GenerateAsync(request);
+        LlmResponse response = await _llmService.GenerateAsync(request);
         return response.Success ? response.Content?.Trim() : null;
     }
 
@@ -319,7 +311,7 @@ public class AiSummaryProcessor
             Model = _summaryConfig.LlmConfig.Model
         };
         
-        LlmResponse response = await _llmProvider.GenerateAsync(request);
+        LlmResponse response = await _llmService.GenerateAsync(request);
         return response.Success ? response.Content?.Trim() : null;
     }
 
@@ -342,7 +334,7 @@ public class AiSummaryProcessor
             Model = _summaryConfig.LlmConfig.Model
         };
         
-        LlmResponse response = await _llmProvider.GenerateAsync(request);
+        LlmResponse response = await _llmService.GenerateAsync(request);
         return response.Success ? response.Content?.Trim() : null;
     }
 }
