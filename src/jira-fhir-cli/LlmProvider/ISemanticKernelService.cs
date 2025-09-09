@@ -1,4 +1,3 @@
-using jira_fhir_cli.LlmProvider.Models;
 
 namespace jira_fhir_cli.LlmProvider;
 

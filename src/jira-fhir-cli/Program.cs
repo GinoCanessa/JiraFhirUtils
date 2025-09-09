@@ -1,6 +1,7 @@
 ﻿using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 
 namespace jira_fhir_cli;
 
@@ -11,7 +12,13 @@ internal abstract class Program
     // Set up the command line using CliOptions and stub handlers for commands.
     public static async Task<int> Main(string[] args)
     {
-        CliOptions config = new CliOptions();
+        // Build configuration with User Secrets support
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddEnvironmentVariables()
+            .AddUserSecrets<Program>()
+            .Build();
+
+        CliOptions cliOptions = new CliOptions();
 
         RootCommand root = new RootCommand("JIRA FHIR loader CLI");
 
@@ -22,30 +29,33 @@ internal abstract class Program
             switch (name)
             {
                 case CliLoadXmlCommand.CommandName:
-                    cmd.SetAction(loadCommandHandler);
+                    cmd.SetAction((ParseResult pr) => loadCommandHandler(pr, configuration));
                     break;
                 case CliBuildFtsCommand.CommandName:
-                    cmd.SetAction(ftsCommandHandler);
+                    cmd.SetAction((ParseResult pr) => ftsCommandHandler(pr, configuration));
                     break;
                 case CliExtractKeywordsCommand.CommandName:
-                    cmd.SetAction(keywordCommandHandler);
+                    cmd.SetAction((ParseResult pr) => keywordCommandHandler(pr, configuration));
                     break;
                 case CliSummarizeCommand.CommandName:
-                    cmd.SetAction(summarizeCommandHandler);
+                    cmd.SetAction((ParseResult pr) => summarizeCommandHandler(pr, configuration));
                     break;
             }
 
             root.Add(cmd);
         }
 
-        ParseResult pr = root.Parse(args);
+        ParseResult pr = root.Parse(args, new ParserConfiguration()
+        {
+            ResponseFileTokenReplacer = null,
+        });
 
         await pr.InvokeAsync();
 
         return _retVal;
     }
 
-    private static async Task loadCommandHandler(ParseResult pr)
+    private static async Task loadCommandHandler(ParseResult pr, IConfiguration configuration)
     {
         if (pr.CommandResult.Command is not CliLoadXmlCommand lc)
         {
@@ -54,7 +64,7 @@ internal abstract class Program
             return;
         }
 
-        CliConfig config = new(lc.CommandCliOptions, pr);
+        CliConfig config = new(lc.CommandCliOptions, pr, configuration);
 
         try
         {
@@ -69,7 +79,7 @@ internal abstract class Program
         }
     }
 
-    private static async Task ftsCommandHandler(ParseResult pr)
+    private static async Task ftsCommandHandler(ParseResult pr, IConfiguration configuration)
     {
         if (pr.CommandResult.Command is not CliBuildFtsCommand fc)
         {
@@ -77,7 +87,7 @@ internal abstract class Program
             _retVal = 1;
             return;
         }
-        CliConfig config = new(fc.CommandCliOptions, pr);
+        CliConfig config = new(fc.CommandCliOptions, pr, configuration);
         try
         {
             FullTextSearch.FtsProcessor fts = new(config);
@@ -91,7 +101,7 @@ internal abstract class Program
         }
     }
 
-    private static async Task keywordCommandHandler(ParseResult pr)
+    private static async Task keywordCommandHandler(ParseResult pr, IConfiguration configuration)
     {
         if (pr.CommandResult.Command is not CliExtractKeywordsCommand kc)
         {
@@ -99,7 +109,7 @@ internal abstract class Program
             _retVal = 1;
             return;
         }
-        CliConfig config = new(kc.CommandCliOptions, pr);
+        CliConfig config = new(kc.CommandCliOptions, pr, configuration);
         try
         {
             Keyword.KeywordProcessor kp = new(config);
@@ -113,7 +123,7 @@ internal abstract class Program
         }
     }
 
-    private static async Task summarizeCommandHandler(ParseResult pr)
+    private static async Task summarizeCommandHandler(ParseResult pr, IConfiguration configuration)
     {
         if (pr.CommandResult.Command is not CliSummarizeCommand sc)
         {
@@ -122,7 +132,7 @@ internal abstract class Program
             return;
         }
         
-        CliConfig config = new(sc.CommandCliOptions, pr);
+        CliConfig config = new(sc.CommandCliOptions, pr, configuration);
         try
         {
             Summary.AiSummaryProcessor processor = new(config);

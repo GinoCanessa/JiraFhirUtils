@@ -1,7 +1,5 @@
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using jira_fhir_cli.LlmProvider.Models;
-using jira_fhir_cli.LlmProvider.Configuration;
 
 namespace jira_fhir_cli.LlmProvider;
 
@@ -13,23 +11,24 @@ public class SemanticKernelServiceAdapter : ISemanticKernelService
 {
     private readonly Kernel _kernel;
     private readonly IChatCompletionService _chatCompletionService;
-    private readonly LlmConfiguration _config;
-    private readonly string _providerName;
+    private readonly CliConfig _config;
 
     public SemanticKernelServiceAdapter(
         Kernel kernel, 
         IChatCompletionService chatCompletionService, 
-        LlmConfiguration config,
-        string providerName)
+        CliConfig config)
     {
         _kernel = kernel ?? throw new ArgumentNullException(nameof(kernel));
         _chatCompletionService = chatCompletionService ?? throw new ArgumentNullException(nameof(chatCompletionService));
         _config = config ?? throw new ArgumentNullException(nameof(config));
-        _providerName = providerName ?? throw new ArgumentNullException(nameof(providerName));
+        if (string.IsNullOrEmpty(config.LlmProvider))
+        {
+            throw new ArgumentNullException(nameof(config.LlmProvider), "LlmProvider must be specified in the configuration.");
+        }
     }
 
     public Kernel Kernel => _kernel;
-    public string ProviderName => _providerName;
+    public string ProviderName => _config.LlmProvider!;
     
     /// <summary>
     /// For now, assume streaming is supported. Individual providers can override this.
@@ -44,7 +43,7 @@ public class SemanticKernelServiceAdapter : ISemanticKernelService
             ChatHistory chatHistory = CreateChatHistory(request);
             
             // Create prompt execution settings from request and config
-            PromptExecutionSettings settings = CreateExecutionSettings(request);
+            PromptExecutionSettings settings = createExecutionSettings(request);
             
             // Get chat completion
             ChatMessageContent result = await _chatCompletionService.GetChatMessageContentAsync(
@@ -54,7 +53,7 @@ public class SemanticKernelServiceAdapter : ISemanticKernelService
                 cancellationToken: cancellationToken);
             
             // Convert result back to LlmResponse
-            return CreateLlmResponse(result, request);
+            return createLlmResponse(result, request);
         }
         catch (Exception ex)
         {
@@ -81,7 +80,7 @@ public class SemanticKernelServiceAdapter : ISemanticKernelService
             LlmRequest testRequest = new LlmRequest
             {
                 Prompt = "Hello",
-                Model = _config.Model,
+                Model = _config.LlmModel ?? throw new ArgumentNullException(nameof(_config.LlmModel)),
                 Temperature = 0.1,
                 MaxTokens = 10
             };
@@ -89,8 +88,9 @@ public class SemanticKernelServiceAdapter : ISemanticKernelService
             LlmResponse response = await GenerateAsync(testRequest, cancellationToken);
             return response.Success;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"Connection validation failed: {ex.Message}");
             return false;
         }
     }
@@ -117,10 +117,10 @@ public class SemanticKernelServiceAdapter : ISemanticKernelService
     /// <summary>
     /// Creates SK PromptExecutionSettings from LlmRequest and LlmConfiguration
     /// </summary>
-    private PromptExecutionSettings CreateExecutionSettings(LlmRequest request)
+    private PromptExecutionSettings createExecutionSettings(LlmRequest request)
     {
         // Use the model from request if specified, otherwise fall back to config
-        string modelId = !string.IsNullOrEmpty(request.Model) ? request.Model : _config.Model;
+        string modelId = !string.IsNullOrEmpty(request.Model) ? request.Model : _config.LlmModel ?? throw new ArgumentNullException(nameof(_config.LlmModel));
         
         // Create base settings
         PromptExecutionSettings settings = new PromptExecutionSettings
@@ -130,11 +130,11 @@ public class SemanticKernelServiceAdapter : ISemanticKernelService
         };
         
         // Add temperature if specified in request, otherwise use config
-        double temperature = request.Temperature > 0 ? request.Temperature : _config.Temperature;
+        double temperature = request.Temperature > 0 ? request.Temperature : _config.LlmTemperature;
         settings.ExtensionData["temperature"] = temperature;
         
         // Add max tokens if specified in request, otherwise use config  
-        int maxTokens = request.MaxTokens > 0 ? request.MaxTokens : _config.MaxTokens;
+        int maxTokens = request.MaxTokens > 0 ? request.MaxTokens : _config.LlmMaxTokens;
         settings.ExtensionData["max_tokens"] = maxTokens;
         
         // Add any additional parameters from the request
@@ -149,7 +149,7 @@ public class SemanticKernelServiceAdapter : ISemanticKernelService
     /// <summary>
     /// Converts SK ChatMessageContent to LlmResponse
     /// </summary>
-    private static LlmResponse CreateLlmResponse(ChatMessageContent result, LlmRequest originalRequest)
+    private static LlmResponse createLlmResponse(ChatMessageContent result, LlmRequest originalRequest)
     {
         Dictionary<string, object> metadata = new Dictionary<string, object>
         {

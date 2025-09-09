@@ -1,8 +1,6 @@
 using Microsoft.Data.Sqlite;
 using JiraFhirUtils.Common;
 using jira_fhir_cli.LlmProvider;
-using jira_fhir_cli.LlmProvider.Configuration;
-using jira_fhir_cli.LlmProvider.Models;
 
 namespace jira_fhir_cli.Summary;
 
@@ -10,17 +8,13 @@ public class AiSummaryProcessor
 {
     private readonly CliConfig _config;
     private readonly ISemanticKernelService _llmService;
-    private readonly SummaryConfiguration _summaryConfig;
-    private readonly PromptTemplates _prompts;
 
     private static System.Text.RegularExpressions.Regex _htmlStripRegex = new("<.*?>", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     public AiSummaryProcessor(CliConfig config)
     {
         _config = config;
-        _summaryConfig = createSummaryConfiguration(config);
-        _llmService = SemanticKernelServiceFactory.CreateService(_summaryConfig.LlmConfig);
-        _prompts = _summaryConfig.Prompts;
+        _llmService = SemanticKernelServiceFactory.CreateService(_config);
     }
 
     public async Task ProcessAsync()
@@ -51,114 +45,20 @@ public class AiSummaryProcessor
         }
 
         // Process in batches
-        for (int i = 0; i < issuesToProcess.Count; i += _summaryConfig.BatchSize)
+        for (int i = 0; i < issuesToProcess.Count; i += _config.BatchSize)
         {
-            List<IssueRecord> batch = issuesToProcess.Skip(i).Take(_summaryConfig.BatchSize).ToList();
+            List<IssueRecord> batch = issuesToProcess.Skip(i).Take(_config.BatchSize).ToList();
             await processBatch(connection, batch);
             
-            Console.WriteLine($"Processed {Math.Min(i + _summaryConfig.BatchSize, issuesToProcess.Count)}/{issuesToProcess.Count} issues");
+            Console.WriteLine($"Processed {Math.Min(i + _config.BatchSize, issuesToProcess.Count)}/{issuesToProcess.Count} issues");
         }
         
         Console.WriteLine("AI Summarization complete!");
     }
 
-    private SummaryConfiguration createSummaryConfiguration(CliConfig config)
-    {
-        // If a configuration file is provided, load from file
-        if (!string.IsNullOrEmpty(config.LlmConfigPath))
-        {
-            return SemanticKernelServiceFactory.CreateSummaryConfigurationFromFile(config.LlmConfigPath);
-        }
-
-        // Otherwise, create from CLI options
-        LlmConfiguration llmConfig;
-        
-        string providerName = config.LlmProvider?.ToLowerInvariant() ?? "lmstudio";
-        switch (providerName)
-        {
-            case "lmstudio":
-                llmConfig = SemanticKernelServiceFactory.CreateDefaultLMStudioConfig();
-                break;
-            case "openai":
-                string? apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-                if (string.IsNullOrEmpty(apiKey))
-                {
-                    throw new InvalidOperationException("OPENAI_API_KEY environment variable is required for OpenAI provider");
-                }
-                llmConfig = SemanticKernelServiceFactory.CreateDefaultOpenAIConfig(apiKey, config.LlmModel ?? "gpt-4o-mini");
-                break;
-            case "anthropic":
-                string? awsAccessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID");
-                if (string.IsNullOrEmpty(awsAccessKey))
-                {
-                    throw new InvalidOperationException("AWS_ACCESS_KEY_ID environment variable is required for Anthropic provider (via AWS Bedrock)");
-                }
-                // AWS secret key will be read from environment by the factory
-                llmConfig = SemanticKernelServiceFactory.CreateDefaultAnthropicConfig(awsAccessKey, config.LlmModel ?? "anthropic.claude-3-haiku-20240307-v1:0");
-                break;
-            case "ollama":
-                llmConfig = SemanticKernelServiceFactory.CreateDefaultOllamaConfig(config.LlmModel ?? "llama2", config.LlmApiEndpoint ?? "http://localhost:11434");
-                break;
-            case "azureopenai":
-                string? azureApiKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
-                string? azureDeployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT");
-                string? azureResource = Environment.GetEnvironmentVariable("AZURE_OPENAI_RESOURCE");
-                
-                if (string.IsNullOrEmpty(azureDeployment))
-                {
-                    throw new InvalidOperationException("AZURE_OPENAI_DEPLOYMENT environment variable is required for Azure OpenAI provider");
-                }
-                
-                if (string.IsNullOrEmpty(azureResource))
-                {
-                    throw new InvalidOperationException("AZURE_OPENAI_RESOURCE environment variable is required for Azure OpenAI provider");
-                }
-                
-                // Use deployment name as model if not overridden
-                string model = config.LlmModel ?? azureDeployment;
-                
-                // Create configuration using factory methods
-                if (!string.IsNullOrEmpty(azureApiKey))
-                {
-                    llmConfig = SemanticKernelServiceFactory.CreateDefaultAzureOpenAIConfig(azureApiKey, azureResource, azureDeployment, model);
-                }
-                else
-                {
-                    llmConfig = SemanticKernelServiceFactory.CreateDefaultAzureOpenAIConfigWithManagedIdentity(azureResource, azureDeployment, model);
-                }
-                break;
-            default:
-                throw new ArgumentException($"Unknown LLM provider: {providerName}");
-        }
-
-        // Override with CLI options if provided
-        if (!string.IsNullOrEmpty(config.LlmApiEndpoint))
-        {
-            llmConfig = llmConfig with { ApiEndpoint = config.LlmApiEndpoint };
-        }
-        if (!string.IsNullOrEmpty(config.LlmModel))
-        {
-            llmConfig = llmConfig with { Model = config.LlmModel };
-        }
-
-        if (!string.IsNullOrEmpty(config.LlmApiVersion))
-        {
-            llmConfig = llmConfig with { ApiVersion = config.LlmApiVersion };
-        }
-
-        return new SummaryConfiguration
-        {
-            LlmConfig = llmConfig,
-            BatchSize = config.BatchSize,
-            OverwriteExistingSummaries = config.OverwriteSummaries,
-            SummaryTypesToGenerate = SummaryTypes.All,
-            Prompts = new PromptTemplates()
-        };
-    }
-
     private List<IssueRecord> getIssuesNeedingSummaries(SqliteConnection db)
     {
-        List<IssueRecord> issues = _summaryConfig.OverwriteExistingSummaries
+        List<IssueRecord> issues = _config.OverwriteSummaries
             ? IssueRecord.SelectList(db)
             : IssueRecord.SelectList(
                 db,
@@ -168,7 +68,7 @@ public class AiSummaryProcessor
                 AiIssueSummaryIsNull: true,
                 AiCommentSummaryIsNull: true);
 
-        if (_summaryConfig.OverwriteExistingSummaries)
+        if (_config.OverwriteSummaries)
         {
             return issues;
         }
@@ -210,8 +110,7 @@ public class AiSummaryProcessor
         bool updateIssue = false;
 
         // Generate issue summary
-        if (_summaryConfig.SummaryTypesToGenerate.HasFlag(SummaryTypes.Issue) && 
-            (issue.AiIssueSummary == null || _summaryConfig.OverwriteExistingSummaries))
+        if ((issue.AiIssueSummary == null || _config.OverwriteSummaries))
         {
             string? issueSummary = await generateIssueSummary(issue);
             if (issueSummary != null)
@@ -223,8 +122,7 @@ public class AiSummaryProcessor
         }
 
         // Generate comment summary
-        if (_summaryConfig.SummaryTypesToGenerate.HasFlag(SummaryTypes.Comments) &&
-            (issue.AiCommentSummary == null || _summaryConfig.OverwriteExistingSummaries))
+        if ((issue.AiCommentSummary == null || _config.OverwriteSummaries))
         {
             string? commentSummary = await generateCommentSummary(db, issue.Id);
             if (commentSummary != null)
@@ -236,8 +134,7 @@ public class AiSummaryProcessor
         }
 
         // Generate resolution summary
-        if (_summaryConfig.SummaryTypesToGenerate.HasFlag(SummaryTypes.Resolution) &&
-            (issue.AiResolutionSummary == null || _summaryConfig.OverwriteExistingSummaries))
+        if ((issue.AiResolutionSummary == null || _config.OverwriteSummaries))
         {
             string? resolutionSummary = await generateResolutionSummary(issue);
             if (resolutionSummary != null)
@@ -272,16 +169,16 @@ public class AiSummaryProcessor
             return "No issue content to summarize";
         }
 
-        string prompt = _prompts.IssuePrompt
+        string prompt = PromptTemplates.IssuePrompt
             .Replace("{title}", stripHtml(issue.Title) ?? "")
             .Replace("{description}", stripHtml(issue.Description) ?? "");
             
         LlmRequest request = new LlmRequest
         {
             Prompt = prompt,
-            Temperature = _summaryConfig.LlmConfig.Temperature,
-            MaxTokens = _summaryConfig.LlmConfig.MaxTokens,
-            Model = _summaryConfig.LlmConfig.Model
+            Temperature = _config.LlmTemperature,
+            MaxTokens = _config.LlmMaxTokens,
+            Model = _config.LlmModel!,
         };
         
         LlmResponse response = await _llmService.GenerateAsync(request);
@@ -301,14 +198,14 @@ public class AiSummaryProcessor
         string commentsText = string.Join("\n\n", comments.Select(c => 
             $"Comment by {c.Author} on {c.CreatedAt:yyyy-MM-dd}:\n{stripHtml(c.Body)}"));
             
-        string prompt = _prompts.CommentPrompt.Replace("{comments}", commentsText);
+        string prompt = PromptTemplates.CommentPrompt.Replace("{comments}", commentsText);
         
         LlmRequest request = new LlmRequest
         {
             Prompt = prompt,
-            Temperature = _summaryConfig.LlmConfig.Temperature,
-            MaxTokens = _summaryConfig.LlmConfig.MaxTokens,
-            Model = _summaryConfig.LlmConfig.Model
+            Temperature = _config.LlmTemperature,
+            MaxTokens = _config.LlmMaxTokens,
+            Model = _config.LlmModel!,
         };
         
         LlmResponse response = await _llmService.GenerateAsync(request);
@@ -322,16 +219,16 @@ public class AiSummaryProcessor
             return "No resolution information available";
         }
         
-        string prompt = _prompts.ResolutionPrompt
+        string prompt = PromptTemplates.ResolutionPrompt
             .Replace("{resolution}", issue.Resolution ?? "")
             .Replace("{resolutionDescription}", stripHtml(issue.ResolutionDescription) ?? "");
             
         LlmRequest request = new LlmRequest
         {
             Prompt = prompt,
-            Temperature = _summaryConfig.LlmConfig.Temperature,
-            MaxTokens = _summaryConfig.LlmConfig.MaxTokens,
-            Model = _summaryConfig.LlmConfig.Model
+            Temperature = _config.LlmTemperature,
+            MaxTokens = _config.LlmMaxTokens,
+            Model = _config.LlmModel!,
         };
         
         LlmResponse response = await _llmService.GenerateAsync(request);

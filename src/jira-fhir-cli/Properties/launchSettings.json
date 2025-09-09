@@ -8,13 +8,9 @@
       "commandName": "Project",
       "commandLineArgs": "summarize --llm-provider lmstudio --llm-model gpt-oss-20b-mlx"
     },
-    "summarize-proxy": {
+    "summarize-openrouter": {
       "commandName": "Project",
-      "commandLineArgs": "summarize --llm-provider azureopenai --llm-endpoint http://localhost:2624 --llm-model gpt-4o-mini",
-      "environmentVariables": {
-        "AZURE_OPENAI_API_KEY": "sk-xxxx",
-        "AZURE_OPENAI_DEPLOYMENT": "gpt-4o-mini_2024-07-18"
-      }
+      "commandLineArgs": "summarize --llm-provider openrouter --llm-model @preset/jira-fhir"
     },
     "build-fts": {
       "commandName": "Project",

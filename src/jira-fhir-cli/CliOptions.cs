@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.CommandLine;
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.Configuration;
 
 namespace jira_fhir_cli;
 
@@ -14,6 +15,14 @@ public record class CliOptions
         (CliSummarizeCommand.CommandName, new CliSummarizeCommand()),
     ];
 
+    public Option<bool> DebugMode { get; set; } = new Option<bool>(
+        "--debug")
+    {
+        Description = "Enable debug mode with verbose logging.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => false,
+    };
+    
     public Option<string?> DbPath { get; set; } = new Option<string?>("--db-path")
     {
         Description = "Path to the SQLite database file.",
@@ -61,25 +70,26 @@ public record class CliOptions
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => "auxiliary.sqlite",
     };
-
-    public Option<string?> LlmConfigPath { get; set; } = new Option<string?>("--llm-config")
-    {
-        Description = "Path to LLM configuration JSON file.",
-        Arity = ArgumentArity.ZeroOrOne,
-    };
-
+    
     public Option<string?> LlmProvider { get; set; } = new Option<string?>("--llm-provider")
     {
-        Description = "LLM provider (openai, lmstudio, anthropic, ollama, azureopenai).",
+        Description = "LLM provider (openai, openrouter, lmstudio, anthropic, ollama, azureopenai).",
         Arity = ArgumentArity.ZeroOrOne,
-        DefaultValueFactory = (ar) => "lmstudio",
+        DefaultValueFactory = (ar) => null,
+    };
+    
+    public Option<string?> LlmApiKey { get; set; } = new Option<string?>("--llm-api-key")
+    {
+        Description = "LLM API key. If not provided, will look for environment variable or user secret.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
     };
 
     public Option<string?> LlmApiEndpoint { get; set; } = new Option<string?>("--llm-endpoint")
     {
         Description = "LLM API endpoint URL.",
         Arity = ArgumentArity.ZeroOrOne,
-        DefaultValueFactory = (ar) => "http://localhost:1234/v1",
+        DefaultValueFactory = (ar) => null,
     };
     
     public Option<string?> LlmApiVersion { get; set; } = new Option<string?>("--llm-api-version")
@@ -93,7 +103,42 @@ public record class CliOptions
     {
         Description = "Model name to use for summaries.",
         Arity = ArgumentArity.ZeroOrOne,
-        DefaultValueFactory = (ar) => "local-model",
+        DefaultValueFactory = (ar) => null,
+    };
+    
+    public Option<double> LlmTemperature { get; set; } = new Option<double>("--llm-temperature")
+    {
+        Description = "Temperature setting for LLM (0.0 to 1.0).",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => 0.3,
+    };
+    
+    public Option<int> LlmMaxTokens { get; set; } = new Option<int>("--llm-max-tokens")
+    {
+        Description = "Maximum tokens for LLM response.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => 1000,
+    };
+    
+    public Option<string?> LlmDeploymentName { get; set; } = new Option<string?>("--llm-deployment-name")
+    {
+        Description = "Deployment name for Azure OpenAI (if applicable).",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+    
+    public Option<string?> LlmResourceName { get; set; } = new Option<string?>("--llm-resource-name")
+    {
+        Description = "Resource name for Azure OpenAI (if applicable).",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+    
+    public Option<string?> SemanticKernelServiceId { get; set; } = new Option<string?>("--semantic-kernel-service-id")
+    {
+        Description = "Semantic Kernel service ID (if using Semantic Kernel).",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
     };
 
     public Option<bool> OverwriteSummaries { get; set; } = new Option<bool>("--overwrite")
@@ -113,25 +158,33 @@ public record class CliOptions
 
 public record class CliConfig
 {
+    public bool DebugMode { get; init; } = false;
     public required string DbPath { get; init; }
     public required string JiraXmlDir { get; init; }
     public required bool DropTables { get; init; }
     public required bool KeepCustomFieldSource { get; init; }
     public required string? FhirSpecDatabase { get; init; }
     public required string KeywordDatabase { get; init; }
-    public string? LlmConfigPath { get; init; }
     public string? LlmProvider { get; init; }
     public string? LlmApiEndpoint { get; init; }
+    public string? LlmApiKey { get; init; }
     public string? LlmModel { get; init; }
     public string? LlmApiVersion { get; init; }
+    public double LlmTemperature { get; init; }
+    public int LlmMaxTokens { get; init; }
+    public string? LlmDeploymentName { get; init; }
+    public string? LlmResourceName { get; init; }
+    public string? SemanticKernelServiceId { get; init; }
     public bool OverwriteSummaries { get; init; }
     public int BatchSize { get; init; }
+    public IConfiguration Configuration { get; init; }
 
-    public CliConfig() { }
+    public CliConfig() { Configuration = null!; }
 
     [SetsRequiredMembers]
-    public CliConfig(CliOptions opt, ParseResult pr)
+    public CliConfig(CliOptions opt, ParseResult pr, IConfiguration configuration)
     {
+        Configuration = configuration;
         string dbPathParam = pr.GetValue(opt.DbPath) ?? "jira_issues.sqlite";
         string dbPath = FileUtils.FindRelativeFile(null, dbPathParam, false)
             ?? FileUtils.FindRelativeDir(null, dbPathParam, false)
@@ -185,15 +238,65 @@ public record class CliConfig
         // load options that do not require extra processing
         DropTables = pr.GetValue(opt.LoadDropTables);
         KeepCustomFieldSource = pr.GetValue(opt.KeepCustomFieldSource);
+        DebugMode = pr.GetValue(opt.DebugMode);
 
-        // load LLM-related options
-        LlmConfigPath = pr.GetValue(opt.LlmConfigPath);
+        // load LLM-related options with configuration hierarchy
         LlmProvider = pr.GetValue(opt.LlmProvider);
-        LlmApiEndpoint = pr.GetValue(opt.LlmApiEndpoint);
+        LlmApiEndpoint = pr.GetValue(opt.LlmApiEndpoint) ?? getDefaultApiEndpoint(LlmProvider);
         LlmModel = pr.GetValue(opt.LlmModel);
         LlmApiVersion = pr.GetValue(opt.LlmApiVersion);
         OverwriteSummaries = pr.GetValue(opt.OverwriteSummaries);
         BatchSize = pr.GetValue(opt.BatchSize);
+        LlmTemperature = pr.GetValue(opt.LlmTemperature);
+        LlmMaxTokens = pr.GetValue(opt.LlmMaxTokens);
+        LlmDeploymentName = pr.GetValue(opt.LlmDeploymentName);
+        LlmResourceName = pr.GetValue(opt.LlmResourceName);
+        LlmApiKey = pr.GetValue(opt.LlmApiKey) ?? getApiKey(LlmProvider ?? string.Empty);
+        SemanticKernelServiceId = pr.GetValue(opt.SemanticKernelServiceId);
+    }
+
+    private string? getDefaultApiEndpoint(string? provider) => provider?.ToLowerInvariant() switch
+    {
+        "openai" => "https://api.openai.com/v1/chat/completions",
+        "openrouter" => "https://api.openrouter.ai/v1/chat/completions",
+        "anthropic" => "https://api.anthropic.com/v1/chat/completions",
+        "azure" => null,
+        "azureopenai" => null, // Azure OpenAI endpoints are resource-specific
+        "lmstudio" => "http://localhost:1234/v1/chat/completions",
+        "ollama" => "http://localhost:11434/chat",
+        "google" => null,
+        "googleai" => null,
+        _ => "https://api.openrouter.ai/v1/chat/completions"
+    };
+
+    /// <summary>
+    /// Get configuration value with hierarchical lookup: User Secrets -> Environment Variables -> Default
+    /// </summary>
+    /// <param name="key">The configuration key to look up</param>
+    /// <param name="defaultValue">Default value if not found</param>
+    /// <returns>Configuration value or default</returns>
+    private string? getConfigurationValue(string key, string? defaultValue = null)
+    {
+        return Configuration[key] ?? defaultValue;
+    }
+    
+    /// <summary>
+    /// Get API key for a specific LLM provider with hierarchical lookup
+    /// </summary>
+    /// <param name="provider">Provider name (openai, anthropic, azureopenai, etc.)</param>
+    /// <returns>API key or null</returns>
+    private string? getApiKey(string provider)
+    {
+        // Try provider-specific key first, then generic API key, then common environment variable names
+        return getConfigurationValue($"LLM:{provider}:ApiKey") 
+               ?? getConfigurationValue($"{provider}:ApiKey") 
+               ?? getConfigurationValue("LLM:ApiKey")
+               ?? getConfigurationValue(provider.ToUpperInvariant() + "_API_KEY")
+               ?? (provider.ToLowerInvariant() switch
+               {
+                   "azureopenai" => getConfigurationValue("AZURE_OPENAI_API_KEY"),
+                   _ => null
+               });
     }
 }
 
@@ -207,6 +310,7 @@ public class CliLoadXmlCommand : Command
     public CliLoadXmlCommand() : base(CommandName, "Load JIRA issues from XML export files into the database.")
     {
         // Add options defined in CliOptions
+        this.Add(_cliOptions.DebugMode);
         this.Add(_cliOptions.DbPath);
         this.Add(_cliOptions.JiraXmlDir);
         this.Add(_cliOptions.LoadDropTables);
@@ -224,6 +328,7 @@ public class CliBuildFtsCommand : Command
     public CliBuildFtsCommand() : base(CommandName, "Create full-text index tables in the database, using FTS5.")
     {
         // Add options defined in CliOptions
+        this.Add(_cliOptions.DebugMode);
         this.Add(_cliOptions.DbPath);
     }
 }
@@ -236,6 +341,7 @@ public class CliExtractKeywordsCommand : Command
     public CliExtractKeywordsCommand() : base(CommandName, "Extract and display keywords from the issues in the database.")
     {
         // Add options defined in CliOptions
+        this.Add(_cliOptions.DebugMode);
         this.Add(_cliOptions.DbPath);
         this.Add(_cliOptions.FhirSpecDatabase);
         this.Add(_cliOptions.KeywordDatabase);
@@ -250,12 +356,18 @@ public class CliSummarizeCommand : Command
     public CliSummarizeCommand() : base(CommandName, "Create summaries of issues, comments, and resolutions.")
     {
         // Add options defined in CliOptions
+        this.Add(_cliOptions.DebugMode);
         this.Add(_cliOptions.DbPath);
-        this.Add(_cliOptions.LlmConfigPath);
         this.Add(_cliOptions.LlmProvider);
+        this.Add(_cliOptions.LlmApiKey);
         this.Add(_cliOptions.LlmApiEndpoint);
         this.Add(_cliOptions.LlmModel);
         this.Add(_cliOptions.LlmApiVersion);
+        this.Add(_cliOptions.LlmTemperature);
+        this.Add(_cliOptions.LlmMaxTokens);
+        this.Add(_cliOptions.LlmDeploymentName);
+        this.Add(_cliOptions.LlmResourceName);
+        this.Add(_cliOptions.SemanticKernelServiceId);
         this.Add(_cliOptions.OverwriteSummaries);
         this.Add(_cliOptions.BatchSize);
     }
