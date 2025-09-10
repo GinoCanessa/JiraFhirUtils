@@ -46,3 +46,20 @@ public partial record class DbCorpusKeywordRecord
     public required int Count { get; set; }
     public required KeywordTypeCodes KeywordType { get; set; }
 }
+
+[JfSQLiteTable("total_frequencies")]
+
+public partial record class DbTotalFrequencyRecord
+{
+    [JfSQLiteKey]
+    public required int Id { get; set; }
+
+    [JfSQLiteForeignKey(referenceTable: "issues", referenceColumn: "Id")]
+    public required int? IssueId { get; set; }
+
+    public int TotalWords { get; set; } = 0;
+    public int TotalLemmaWords { get; set; } = 0;
+    public int TotalStopWords { get; set; } = 0;
+    public int TotalFhirElementPaths { get; set; } = 0;
+    public int TotalFhirOperationNames { get; set; } = 0;
+}

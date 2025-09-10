@@ -25,9 +25,5 @@
 		<ProjectReference Include="..\JiraFhirUtils.Common\JiraFhirUtils.Common.csproj" />
 	</ItemGroup>
 
-	<ItemGroup>
-	  <Folder Include="Download\" />
-	</ItemGroup>
-
 
 </Project>

@@ -1,4 +1,4 @@
-namespace jira_fhir_cli.Download.Models;
+namespace jira_fhir_cli.Download;
 
 /// <summary>
 /// Aggregated results with success/failure tracking for multiple downloads

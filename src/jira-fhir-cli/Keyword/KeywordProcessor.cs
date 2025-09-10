@@ -10,6 +10,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using JiraFhirUtils.Common.FhirDbModels;
 
 namespace jira_fhir_cli.Keyword;
 
@@ -54,14 +55,17 @@ public class KeywordProcessor
         // drop existing tables if they exist
         DbIssueKeywordRecord.DropTable(db);
         DbCorpusKeywordRecord.DropTable(db);
+        DbTotalFrequencyRecord.DropTable(db);
         
         // ensure our tables exist
         DbIssueKeywordRecord.CreateTable(db);
         DbCorpusKeywordRecord.CreateTable(db);
+        DbTotalFrequencyRecord.CreateTable(db);
 
         // get current indexes
         DbIssueKeywordRecord.LoadMaxKey(db);
         DbCorpusKeywordRecord.LoadMaxKey(db);
+        DbTotalFrequencyRecord.LoadMaxKey(db);
         
         processIssues(db);
     }
@@ -81,6 +85,13 @@ public class KeywordProcessor
         Dictionary<int, IssueWordCountInfo> wordCountsByIssue = [];
         CorpusWordCountInfo totalWordCounts = [];
 
+        Dictionary<int, DbTotalFrequencyRecord> totalFrequenciesByIssue = [];
+        DbTotalFrequencyRecord totalFrequencies = new()
+        {
+            Id = DbTotalFrequencyRecord.GetIndex(),
+            IssueId = null,
+        };
+        
         int issueIndex = 0;
 
         foreach (IssueRecord issue in issues)
@@ -107,26 +118,56 @@ public class KeywordProcessor
 
             if (!string.IsNullOrWhiteSpace(issue.Title))
             {
-                countFromString(issue.Id, stripHtml(issue.Title), issueWordCounts, totalWordCounts);
+                countFromString(
+                    issue.Id, 
+                    stripHtml(issue.Title), 
+                    issueWordCounts, 
+                    totalWordCounts,
+                    totalFrequenciesByIssue,
+                    totalFrequencies);
             }
             if (!string.IsNullOrWhiteSpace(issue.Description))
             {
-                countFromString(issue.Id, stripHtml(issue.Description), issueWordCounts, totalWordCounts);
+                countFromString(
+                    issue.Id, 
+                    stripHtml(issue.Description), 
+                    issueWordCounts, 
+                    totalWordCounts,
+                    totalFrequenciesByIssue,
+                    totalFrequencies);
             }
             if (!string.IsNullOrWhiteSpace(issue.Summary))
             {
-                countFromString(issue.Id, stripHtml(issue.Summary), issueWordCounts, totalWordCounts);
+                countFromString(
+                    issue.Id, 
+                    stripHtml(issue.Summary), 
+                    issueWordCounts, 
+                    totalWordCounts,
+                    totalFrequenciesByIssue,
+                    totalFrequencies);
             }
             if (!string.IsNullOrWhiteSpace(issue.ResolutionDescription))
             {
-                countFromString(issue.Id, stripHtml(issue.ResolutionDescription), issueWordCounts, totalWordCounts);
+                countFromString(
+                    issue.Id, 
+                    stripHtml(issue.ResolutionDescription),
+                    issueWordCounts, 
+                    totalWordCounts,
+                    totalFrequenciesByIssue,
+                    totalFrequencies);
             }
 
             foreach (CommentRecord comment in comments)
             {
                 if (!string.IsNullOrWhiteSpace(comment.Body))
                 {
-                    countFromString(issue.Id, stripHtml(comment.Body), issueWordCounts, totalWordCounts);
+                    countFromString(
+                        issue.Id,
+                        stripHtml(comment.Body), 
+                        issueWordCounts, 
+                        totalWordCounts,
+                        totalFrequenciesByIssue,
+                        totalFrequencies);
                 }
             }
 
@@ -136,57 +177,80 @@ public class KeywordProcessor
         // traverse issues to insert into the database
         foreach (IssueWordCountInfo issueWordCounts in wordCountsByIssue.Values)
         {
+            // insert all issue words so we can do further analysis later
+            issueWordCounts.Values.Insert(db);
+
             // only insert the most frequent keywords
-            issueWordCounts.Values.OrderByDescending(wc => wc.Count).Take(_keywordsPerIssue).Insert(db);
+            // issueWordCounts.Values.OrderByDescending(wc => wc.Count).Take(_keywordsPerIssue).Insert(db);
         }
         
         // insert all corpus keywords
         totalWordCounts.Values.Insert(db);
         
-        return;
+        // insert total frequencies
+        totalFrequenciesByIssue.Values.Insert(db);
+        totalFrequencies.Insert(db);
     }
 
     private void countFromString(
         int issueId,
         string input,
         IssueWordCountInfo issueWordCounts,
-        CorpusWordCountInfo totalWordCounts)
+        CorpusWordCountInfo totalWordCounts,
+        Dictionary<int, DbTotalFrequencyRecord> totalFrequenciesByIssue,
+        DbTotalFrequencyRecord totalFrequencies)
     {
         if (string.IsNullOrWhiteSpace(input))
         {
             return;
         }
+        
+        if (!totalFrequenciesByIssue.TryGetValue(issueId, out DbTotalFrequencyRecord? issueTotalFrequency))
+        {
+            issueTotalFrequency = new DbTotalFrequencyRecord()
+            {
+                Id = DbTotalFrequencyRecord.GetIndex(),
+                IssueId = issueId,
+            };
+            totalFrequenciesByIssue[issueId] = issueTotalFrequency;
+        }
 
         string[] parts = input.Split(_wordSplitChars, StringSplitOptions.RemoveEmptyEntries);
         foreach (string word in parts)
         {
-            (string sanitized, bool hasAlpha) = SanitizeAsKeyword(word);
+            (string sanitized, char firstLetter, char? prefixSymbol) = SanitizeAsKeyword(word);
 
             // do not process anything too short or only digits (all noise)
-            if (!hasAlpha ||
+            if ((firstLetter == '\0') ||
                 (sanitized.Length < _minKeywordLength))
             {
                 continue;
             }
 
+            issueTotalFrequency.TotalWords++;
+            totalFrequencies.TotalWords++;
+
             // filter stop words first
             if (_stopWords.Contains(sanitized))
             {
+                issueTotalFrequency.TotalStopWords++;
+                totalFrequencies.TotalStopWords++;
+                
                 // do not track stop words - code is here for debugging
-                //if (issueWordCounts.TryGetValue(sanitized, out WordStats swInfo))
-                //{
-                //    swInfo.Count++;
-                //}
-                //else
-                //{
-                //    issueWordCounts[sanitized] = new()
-                //    {
-                //        FirstOccurenceText = word,
-                //        Sanitized = sanitized,
-                //        Count = 1,
-                //        KeywordType = KeywordTypeCodes.StopWord,
-                //    };
-                //}
+                // if (issueWordCounts.TryGetValue(sanitized, out WordStats swInfo))
+                // {
+                //     swInfo.Count++;
+                // }
+                // else
+                // {
+                //     issueWordCounts[sanitized] = new()
+                //     {
+                //         FirstOccurenceText = word,
+                //         Sanitized = sanitized,
+                //         Count = 1,
+                //         KeywordType = KeywordTypeCodes.StopWord,
+                //     };
+                // }
 
                 //if (totalWordCounts.TryGetValue(sanitized, out WordStats tswInfo))
                 //{
@@ -205,10 +269,21 @@ public class KeywordProcessor
 
                 continue;
             }
+            
+            bool isFhirElementPath = _fhirElementPaths.Contains(sanitized);
+            bool isFhirOperationName = (prefixSymbol == '$') && _fhirOperationNames.Contains(sanitized);
+            bool isLemma = _lemmas.TryGetValue(sanitized, out string? lemma);
 
+            // process as a fhir element path if it is either not a lemma, or if it is a lemma and starts with an uppercase letter
+            bool processAsFhirElementPath = isFhirElementPath &&
+                (!isLemma || (isLemma && char.IsUpper(firstLetter)));
+            
             // filter FHIR element paths next
-            if (_fhirElementPaths.Contains(sanitized))
+            if (processAsFhirElementPath)
             {
+                issueTotalFrequency.TotalFhirElementPaths++;
+                totalFrequencies.TotalFhirElementPaths++;
+
                 if (issueWordCounts.TryGetValue(sanitized, out DbIssueKeywordRecord? fwInfo))
                 {
                     fwInfo.Count++;
@@ -244,9 +319,11 @@ public class KeywordProcessor
             }
 
             // check for a FHIR operation name
-            if ((word[0] == '$') &&
-                _fhirOperationNames.Contains(sanitized))
+            if (isFhirOperationName)
             {
+                issueTotalFrequency.TotalFhirOperationNames++;
+                totalFrequencies.TotalFhirOperationNames++;
+
                 if (issueWordCounts.TryGetValue(sanitized, out DbIssueKeywordRecord? owInfo))
                 {
                     owInfo.Count++;
@@ -280,8 +357,12 @@ public class KeywordProcessor
             }
 
             // check for a lemma
-            if (_lemmas.TryGetValue(sanitized, out string? lemma))
+            if (isLemma &&
+                !string.IsNullOrWhiteSpace(lemma))
             {
+                issueTotalFrequency.TotalLemmaWords++;
+                totalFrequencies.TotalLemmaWords++;
+
                 if (issueWordCounts.TryGetValue(lemma, out DbIssueKeywordRecord? lwInfo))
                 {
                     lwInfo.Count++;
@@ -356,7 +437,7 @@ public class KeywordProcessor
         if (string.IsNullOrEmpty(auxDbPath) ||
             !File.Exists(auxDbPath))
         {
-            Console.WriteLine($"Warning: Auxilary database file '{auxDbPath}' does not exist. No lemmas will be used.");
+            Console.WriteLine($"Warning: Auxiliary database file '{auxDbPath}' does not exist. No lemmas will be used.");
             return lemmas.ToFrozenDictionary(StringComparer.Ordinal);
         }
 
@@ -367,8 +448,8 @@ public class KeywordProcessor
         foreach (LemmaRecord record in lemmaRecords)
         {
             // sanitize the keyword
-            (string sanitized, bool hasAlpha) = SanitizeAsKeyword(record.Inflection);
-            if ((!hasAlpha) ||
+            (string sanitized, char firstLetter, _) = SanitizeAsKeyword(record.Inflection);
+            if ((firstLetter == '\0') ||
                 (sanitized.Length < _minKeywordLength) ||
                 lemmas.ContainsKey(sanitized))
             {
@@ -376,7 +457,7 @@ public class KeywordProcessor
             }
 
             // need to sanitize the lemma as well
-            (string lemmaSanitized, _) = SanitizeAsKeyword(record.Lemma);
+            (string lemmaSanitized, _, _) = SanitizeAsKeyword(record.Lemma);
             lemmas[sanitized] = record.Lemma;
         }
 
@@ -389,7 +470,7 @@ public class KeywordProcessor
         if (string.IsNullOrEmpty(auxDbPath) ||
             !File.Exists(auxDbPath))
         {
-            Console.WriteLine($"Warning: Auxilary database file '{auxDbPath}' does not exist. No stopwords will be used.");
+            Console.WriteLine($"Warning: Auxiliary database file '{auxDbPath}' does not exist. No stop words will be used.");
             return words.ToFrozenSet(StringComparer.Ordinal);
         }
 
@@ -402,8 +483,8 @@ public class KeywordProcessor
             using IDataReader reader = command.ExecuteReader();
             while (reader.Read())
             {
-                (string word, bool hasAlpha) = SanitizeAsKeyword(reader.GetString(0));
-                if (hasAlpha)
+                (string word, char firstLetter, _) = SanitizeAsKeyword(reader.GetString(0));
+                if (firstLetter != '\0')
                 {
                     words.Add(word);
                 }
@@ -430,12 +511,12 @@ public class KeywordProcessor
         // we don't parse based on version, so just get all paths
         {
             IDbCommand command = db.CreateCommand();
-            command.CommandText = "SELECT DISTINCT Path FROM Elements WHERE Path IS NOT NULL;";
+            command.CommandText = $"SELECT DISTINCT {nameof(CgDbElement.Path)} FROM {CgDbElement.DefaultTableName} WHERE {nameof(CgDbElement.Path)} IS NOT NULL;";
             using IDataReader reader = command.ExecuteReader();
             while (reader.Read())
             {
-                (string path, bool hasAlpha) = SanitizeAsKeyword(reader.GetString(0));
-                if (hasAlpha)
+                (string path, char firstLetter, _) = SanitizeAsKeyword(reader.GetString(0));
+                if (firstLetter != '\0')
                 {
                     paths.Add(path);
                 }
@@ -444,12 +525,12 @@ public class KeywordProcessor
 
         {
             IDbCommand command = db.CreateCommand();
-            command.CommandText = "SELECT DISTINCT Code FROM Operations WHERE Code IS NOT NULL;";
+            command.CommandText = $"SELECT DISTINCT {nameof(CgDbOperation.Code)} FROM {CgDbOperation.DefaultTableName} WHERE {nameof(CgDbOperation.Code)} IS NOT NULL;";
             using IDataReader reader = command.ExecuteReader();
             while (reader.Read())
             {
-                (string code, bool hasAlpha) = SanitizeAsKeyword(reader.GetString(0));
-                if (hasAlpha)
+                (string code, char firstLetter, _) = SanitizeAsKeyword(reader.GetString(0));
+                if (firstLetter != '\0')
                 {
                     operations.Add(code);
                 }
@@ -469,14 +550,15 @@ public class KeywordProcessor
         return _htmlStripRegex.Replace(text, string.Empty);
     }
 
-    public static (string clean, bool hasAlpha) SanitizeAsKeyword(string? text)
+    public static (string clean, char firstLetter, char? prefixSymbol) SanitizeAsKeyword(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            return (string.Empty, false);
+            return (string.Empty, '\0', null);
         }
 
-        bool hasAlpha = false;
+        char? firstLetter = null;
+        char? prefixSymbol = null;
 
         StringBuilder sb = new StringBuilder(text.Length);
         foreach (char c in text)
@@ -488,11 +570,11 @@ public class KeywordProcessor
                 case UnicodeCategory.UppercaseLetter:
                 case UnicodeCategory.TitlecaseLetter:
                     sb.Append(char.ToLower(c));
-                    hasAlpha = true;
+                    firstLetter ??= c;
                     break;
 
                 case UnicodeCategory.LowercaseLetter:
-                    hasAlpha = true;
+                    firstLetter ??= c;
                     sb.Append(c);
                     break;
 
@@ -514,22 +596,28 @@ public class KeywordProcessor
                 //case UnicodeCategory.Format:
                 //case UnicodeCategory.Surrogate:
                 //case UnicodeCategory.PrivateUse:
-                //case UnicodeCategory.ConnectorPunctuation:
-                //case UnicodeCategory.DashPunctuation:
-                //case UnicodeCategory.OpenPunctuation:
-                //case UnicodeCategory.ClosePunctuation:
-                //case UnicodeCategory.InitialQuotePunctuation:
-                //case UnicodeCategory.FinalQuotePunctuation:
-                //case UnicodeCategory.OtherPunctuation:
-                //case UnicodeCategory.MathSymbol:
-                //case UnicodeCategory.CurrencySymbol:
+                case UnicodeCategory.ConnectorPunctuation:
+                case UnicodeCategory.DashPunctuation:
+                case UnicodeCategory.OpenPunctuation:
+                case UnicodeCategory.ClosePunctuation:
+                case UnicodeCategory.InitialQuotePunctuation:
+                case UnicodeCategory.FinalQuotePunctuation:
+                case UnicodeCategory.OtherPunctuation:
+                case UnicodeCategory.MathSymbol:
+                case UnicodeCategory.CurrencySymbol:
                 //case UnicodeCategory.ModifierSymbol:
-                //case UnicodeCategory.OtherSymbol:
+                case UnicodeCategory.OtherSymbol:
                 //case UnicodeCategory.OtherNotAssigned:
+                    if (firstLetter == null)
+                    {
+                        prefixSymbol ??= c;
+                    }
+
+                    break;
                 default:
                     break;
             }
         }
-        return (sb.ToString(), hasAlpha);
+        return (sb.ToString(), firstLetter ?? '\0', prefixSymbol);
     }
 }

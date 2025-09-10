@@ -1,4 +1,4 @@
-namespace jira_fhir_cli.Download.Models;
+namespace jira_fhir_cli.Download;
 
 /// <summary>
 /// Represents a date range for downloading JIRA data

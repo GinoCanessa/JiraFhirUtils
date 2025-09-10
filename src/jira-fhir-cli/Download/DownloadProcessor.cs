@@ -1,7 +1,6 @@
 using System.Net.Http;
 using System.Text;
 using System.Web;
-using jira_fhir_cli.Download.Models;
 
 namespace jira_fhir_cli.Download;
 
