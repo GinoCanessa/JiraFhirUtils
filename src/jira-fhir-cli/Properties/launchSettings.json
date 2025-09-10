@@ -1,5 +1,9 @@
 {
   "profiles": {
+    "download": {
+      "commandName": "Project",
+      "commandLineArgs": "download --download-limit 40 --jira-cookie \"cpa_i=JTdCJTIyaXAlMjIlM0ElMjIxNjcuMjIwLjU3LjI3JTIyJTdE; JSESSIONID=9ACE1FBD6626DFECA0D4EB3069F42683; seraph.rememberme.cookie=35000%3Ae281f8b0fc3e6bfb86ef71be433c20d5954339f4; atlassian.xsrf.token=B5SG-BV05-G2ZY-EESN_1af1220e29590f1060d383e9be8699db9dca189c_lin\""
+    },
     "load-xml": {
       "commandName": "Project",
       "commandLineArgs": "load-xml --drop-tables true"

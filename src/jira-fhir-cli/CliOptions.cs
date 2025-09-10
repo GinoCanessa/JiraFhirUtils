@@ -1,4 +1,4 @@
-﻿using JiraFhirUtils.Common;
+using JiraFhirUtils.Common;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.Diagnostics.CodeAnalysis;
@@ -13,6 +13,7 @@ public record class CliOptions
         (CliBuildFtsCommand.CommandName, new CliBuildFtsCommand()),
         (CliExtractKeywordsCommand.CommandName, new CliExtractKeywordsCommand()),
         (CliSummarizeCommand.CommandName, new CliSummarizeCommand()),
+        (CliDownloadCommand.CommandName, new CliDownloadCommand()),
     ];
 
     public Option<bool> DebugMode { get; set; } = new Option<bool>(
@@ -70,11 +71,36 @@ public record class CliOptions
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => "auxiliary.sqlite",
     };
+
+    public Option<string?> JiraSpecification { get; set; } = new Option<string?>(
+        "--specification",
+        "--spec")
+    {
+        Description = "Optional JIRA specification filter.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+
+    public Option<string> JiraCookie { get; set; } = new Option<string>(
+        "--jira-cookie",
+        "--cookie")
+    {
+        Description = "JIRA authentication cookie (required).",
+        Arity = ArgumentArity.ExactlyOne,
+    };
+    
+    public Option<int?> DownloadLimit { get; set; } = new Option<int?>(
+        "--download-limit")
+    {
+        Description = "Optional limit on number of days to download.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
     
     public Option<string?> LlmProvider { get; set; } = new Option<string?>("--llm-provider")
     {
         Description = "LLM provider (openai, openrouter, lmstudio, azureopenai). Default: openai-compatible.",
-        Arity = ArgumentArity.ZeroOrOne,
+        Arity = ArgumentArity.ExactlyOne,
         DefaultValueFactory = (ar) => null,
     };
     
@@ -88,7 +114,7 @@ public record class CliOptions
     public Option<string?> LlmApiEndpoint { get; set; } = new Option<string?>("--llm-endpoint")
     {
         Description = "LLM API endpoint URL.",
-        Arity = ArgumentArity.ZeroOrOne,
+        Arity = ArgumentArity.ExactlyOne,
         DefaultValueFactory = (ar) => null,
     };
     
@@ -159,6 +185,9 @@ public record class CliConfig
     public required bool KeepCustomFieldSource { get; init; }
     public required string? FhirSpecDatabase { get; init; }
     public required string KeywordDatabase { get; init; }
+    public string? JiraSpecification { get; init; }
+    public required string JiraCookie { get; init; }
+    public int? DownloadLimit { get; init; }
     public string? LlmProvider { get; init; }
     public string? LlmApiEndpoint { get; init; }
     public string? LlmApiKey { get; init; }
@@ -227,6 +256,11 @@ public record class CliConfig
         }
 
         KeywordDatabase = keywordDbFile;
+
+        // load new download-related options
+        JiraSpecification = pr.GetValue(opt.JiraSpecification);
+        JiraCookie = pr.GetValue(opt.JiraCookie) ?? throw new ArgumentException("JiraCookie is required");
+        DownloadLimit = pr.GetValue(opt.DownloadLimit);
 
         // load options that do not require extra processing
         DropTables = pr.GetValue(opt.LoadDropTables);
@@ -358,5 +392,20 @@ public class CliSummarizeCommand : Command
         this.Add(_cliOptions.LlmResourceName);
         this.Add(_cliOptions.OverwriteSummaries);
         this.Add(_cliOptions.BatchSize);
+    }
+}
+
+public class CliDownloadCommand : Command
+{
+    public const string CommandName = "download";
+    private CliOptions _cliOptions = new();
+    public CliOptions CommandCliOptions => _cliOptions;
+    public CliDownloadCommand() : base(CommandName, "Download JIRA XML files by week starting from current week working backwards")
+    {
+        // Add options defined in CliOptions
+        this.Add(_cliOptions.JiraSpecification);
+        this.Add(_cliOptions.JiraCookie);
+        this.Add(_cliOptions.JiraXmlDir);
+        this.Add(_cliOptions.DownloadLimit);
     }
 }

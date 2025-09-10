@@ -40,6 +40,9 @@ internal abstract class Program
                 case CliSummarizeCommand.CommandName:
                     cmd.SetAction((ParseResult pr) => summarizeCommandHandler(pr, configuration));
                     break;
+                case CliDownloadCommand.CommandName:
+                    cmd.SetAction((ParseResult pr) => downloadCommandHandler(pr, configuration));
+                    break;
             }
 
             root.Add(cmd);
@@ -142,6 +145,29 @@ internal abstract class Program
         catch (Exception ex)
         {
             Console.WriteLine($"Error generating summaries: {ex.Message}");
+            _retVal = ex.HResult;
+        }
+    }
+
+    private static async Task downloadCommandHandler(ParseResult pr, IConfiguration configuration)
+    {
+        if (pr.CommandResult.Command is not CliDownloadCommand dc)
+        {
+            Console.WriteLine("Incorrect mapping from command to command handler!");
+            _retVal = 1;
+            return;
+        }
+        
+        CliConfig config = new(dc.CommandCliOptions, pr, configuration);
+        try
+        {
+            Download.DownloadProcessor processor = new(config);
+            await processor.ProcessAsync();
+            _retVal = 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error downloading JIRA files: {ex.Message}");
             _retVal = ex.HResult;
         }
     }
