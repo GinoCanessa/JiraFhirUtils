@@ -253,7 +253,7 @@ public record class CliConfig
         "openrouter" => "https://openrouter.ai/api/v1",
         "azure" => null,
         "azureopenai" => null, // Azure OpenAI endpoints are resource-specific
-        "lmstudio" => "http://localhost:1234/api/v1",
+        "lmstudio" => "http://localhost:1234/v1",
         "ollama" => "http://localhost:11434/api/v1",
         _ => "https://openrouter.ai/api/v1"
     };
