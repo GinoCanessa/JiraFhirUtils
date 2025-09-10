@@ -62,8 +62,8 @@ internal class JiraXmlToSql
         
         Console.WriteLine($"Found {xmlFiles.Count} XML files to process.");
 
-        // need to process in DESCENDING order so that the latest updates are processed last
-        foreach (string filePath in xmlFiles.OrderByDescending(f => f))
+        // need to process in ASCENDING order so that the latest updates are processed last
+        foreach (string filePath in xmlFiles.OrderBy(f => f))
         {
             ProcessXmlFile(filePath, connection);
         }
