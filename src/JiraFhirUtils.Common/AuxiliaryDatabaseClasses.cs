@@ -1,4 +1,4 @@
-﻿using JiraFhirUtils.SQLiteGenerator;
+using JiraFhirUtils.SQLiteGenerator;
 
 namespace JiraFhirUtils.Common;
 
@@ -32,6 +32,7 @@ public partial record class DbIssueKeywordRecord
     public required string Keyword { get; set; }
     public required int Count { get; set; }
     public required KeywordTypeCodes KeywordType { get; set; }
+    public double? Bm25Score { get; set; }
 }
 
 [JfSQLiteTable("corpus_keywords")]
@@ -45,6 +46,7 @@ public partial record class DbCorpusKeywordRecord
     public required string Keyword { get; set; }
     public required int Count { get; set; }
     public required KeywordTypeCodes KeywordType { get; set; }
+    public double? Idf { get; set; }
 }
 
 [JfSQLiteTable("total_frequencies")]
@@ -62,4 +64,26 @@ public partial record class DbTotalFrequencyRecord
     public int TotalStopWords { get; set; } = 0;
     public int TotalFhirElementPaths { get; set; } = 0;
     public int TotalFhirOperationNames { get; set; } = 0;
+}
+
+[JfSQLiteTable("bm25_config")]
+public partial record class DbBm25ConfigRecord
+{
+    [JfSQLiteKey]
+    public required int Id { get; set; }
+    
+    public double K1 { get; set; } = 1.2;
+    public double B { get; set; } = 0.75;
+    public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
+}
+
+[JfSQLiteTable("document_stats")]
+public partial record class DbDocumentStatsRecord
+{
+    [JfSQLiteKey]
+    public required int Id { get; set; }
+    
+    public double AverageDocumentLength { get; set; }
+    public int TotalDocumentCount { get; set; }
+    public DateTime LastCalculated { get; set; } = DateTime.UtcNow;
 }

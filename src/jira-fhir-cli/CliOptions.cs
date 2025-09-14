@@ -12,6 +12,7 @@ public record class CliOptions
         (CliLoadXmlCommand.CommandName, new CliLoadXmlCommand()),
         (CliBuildFtsCommand.CommandName, new CliBuildFtsCommand()),
         (CliExtractKeywordsCommand.CommandName, new CliExtractKeywordsCommand()),
+        (CliSearchBm25Command.CommandName, new CliSearchBm25Command()),
         (CliSummarizeCommand.CommandName, new CliSummarizeCommand()),
         (CliDownloadCommand.CommandName, new CliDownloadCommand()),
     ];
@@ -172,7 +173,48 @@ public record class CliOptions
     {
         Description = "Number of issues to process in each batch.",
         Arity = ArgumentArity.ZeroOrOne,
-        DefaultValueFactory = (ar) => 10,
+        DefaultValueFactory = (ar) => 100,
+    };
+
+    public Option<string?> SearchQuery { get; set; } = new Option<string?>("--query")
+    {
+        Description = "Search query for BM25 ranking.",
+        Arity = ArgumentArity.ExactlyOne,
+    };
+
+    public Option<int> SearchTopK { get; set; } = new Option<int>("--top-k", "--limit")
+    {
+        Description = "Number of top results to return.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => 20,
+    };
+
+    public Option<string?> SearchKeywordType { get; set; } = new Option<string?>("--keyword-type")
+    {
+        Description = "Filter results by keyword type (Word, FhirElementPath, FhirOperationName).",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+
+    public Option<double> Bm25K1 { get; set; } = new Option<double>("--bm25-k1")
+    {
+        Description = "BM25 k1 parameter (term frequency saturation).",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => 1.2,
+    };
+
+    public Option<double> Bm25B { get; set; } = new Option<double>("--bm25-b")
+    {
+        Description = "BM25 b parameter (length normalization).",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => 0.75,
+    };
+
+    public Option<bool> ShowTopKeywords { get; set; } = new Option<bool>("--show-keywords")
+    {
+        Description = "Show top keywords by IDF score.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => false,
     };
 }
 
@@ -199,6 +241,12 @@ public record class CliConfig
     public string? LlmResourceName { get; init; }
     public bool OverwriteSummaries { get; init; }
     public int BatchSize { get; init; }
+    public string? SearchQuery { get; init; }
+    public int SearchTopK { get; init; }
+    public string? SearchKeywordType { get; init; }
+    public double Bm25K1 { get; init; }
+    public double Bm25B { get; init; }
+    public bool ShowTopKeywords { get; init; }
     public IConfiguration Configuration { get; init; }
 
     public CliConfig() { Configuration = null!; }
@@ -259,7 +307,7 @@ public record class CliConfig
 
         // load new download-related options
         JiraSpecification = pr.GetValue(opt.JiraSpecification);
-        JiraCookie = pr.GetValue(opt.JiraCookie) ?? throw new ArgumentException("JiraCookie is required");
+        JiraCookie = pr.GetValue(opt.JiraCookie) ?? string.Empty;   // throw new ArgumentException("JiraCookie is required");
         DownloadLimit = pr.GetValue(opt.DownloadLimit);
 
         // load options that do not require extra processing
@@ -279,6 +327,14 @@ public record class CliConfig
         LlmDeploymentName = pr.GetValue(opt.LlmDeploymentName);
         LlmResourceName = pr.GetValue(opt.LlmResourceName);
         LlmApiKey = pr.GetValue(opt.LlmApiKey) ?? getApiKey(LlmProvider ?? string.Empty);
+
+        // load BM25 search options
+        SearchQuery = pr.GetValue(opt.SearchQuery);
+        SearchTopK = pr.GetValue(opt.SearchTopK);
+        SearchKeywordType = pr.GetValue(opt.SearchKeywordType);
+        Bm25K1 = pr.GetValue(opt.Bm25K1);
+        Bm25B = pr.GetValue(opt.Bm25B);
+        ShowTopKeywords = pr.GetValue(opt.ShowTopKeywords);
     }
 
     private string? getDefaultApiEndpoint(string? provider) => provider?.ToLowerInvariant() switch
@@ -407,5 +463,26 @@ public class CliDownloadCommand : Command
         this.Add(_cliOptions.JiraCookie);
         this.Add(_cliOptions.JiraXmlDir);
         this.Add(_cliOptions.DownloadLimit);
+    }
+}
+
+public class CliSearchBm25Command : Command
+{
+    public const string CommandName = "search-bm25";
+    private CliOptions _cliOptions = new();
+    public CliOptions CommandCliOptions => _cliOptions;
+    public CliSearchBm25Command() : base(CommandName, "Search issues using BM25 ranking algorithm.")
+    {
+        // Add options defined in CliOptions
+        this.Add(_cliOptions.DebugMode);
+        this.Add(_cliOptions.DbPath);
+        this.Add(_cliOptions.FhirSpecDatabase);
+        this.Add(_cliOptions.KeywordDatabase);
+        this.Add(_cliOptions.SearchQuery);
+        this.Add(_cliOptions.SearchTopK);
+        this.Add(_cliOptions.SearchKeywordType);
+        this.Add(_cliOptions.Bm25K1);
+        this.Add(_cliOptions.Bm25B);
+        this.Add(_cliOptions.ShowTopKeywords);
     }
 }

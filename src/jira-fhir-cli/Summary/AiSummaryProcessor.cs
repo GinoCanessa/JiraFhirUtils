@@ -6,7 +6,7 @@ namespace jira_fhir_cli.Summary;
 
 public class AiSummaryProcessor
 {
-    private const int _maxParallelism = 5;
+    private const int _maxParallelism = 1;
     private readonly CliConfig _config;
     private readonly ILlmService _llmService;
 

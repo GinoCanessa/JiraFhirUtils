@@ -37,6 +37,9 @@ internal abstract class Program
                 case CliExtractKeywordsCommand.CommandName:
                     cmd.SetAction((ParseResult pr) => keywordCommandHandler(pr, configuration));
                     break;
+                case CliSearchBm25Command.CommandName:
+                    cmd.SetAction((ParseResult pr) => searchBm25CommandHandler(pr, configuration));
+                    break;
                 case CliSummarizeCommand.CommandName:
                     cmd.SetAction((ParseResult pr) => summarizeCommandHandler(pr, configuration));
                     break;
@@ -122,6 +125,28 @@ internal abstract class Program
         catch (Exception ex)
         {
             Console.WriteLine($"Error processing keywords: {ex.Message}");
+            _retVal = ex.HResult;
+        }
+    }
+
+    private static async Task searchBm25CommandHandler(ParseResult pr, IConfiguration configuration)
+    {
+        if (pr.CommandResult.Command is not CliSearchBm25Command sc)
+        {
+            Console.WriteLine("Incorrect mapping from command to command handler!");
+            _retVal = 1;
+            return;
+        }
+        CliConfig config = new(sc.CommandCliOptions, pr, configuration);
+        try
+        {
+            Keyword.Bm25SearchProcessor processor = new(config);
+            await processor.ProcessAsync();
+            _retVal = 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error performing BM25 search: {ex.Message}");
             _retVal = ex.HResult;
         }
     }

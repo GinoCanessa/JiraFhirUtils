@@ -56,18 +56,27 @@ public class KeywordProcessor
         DbIssueKeywordRecord.DropTable(db);
         DbCorpusKeywordRecord.DropTable(db);
         DbTotalFrequencyRecord.DropTable(db);
+        DbBm25ConfigRecord.DropTable(db);
+        DbDocumentStatsRecord.DropTable(db);
         
         // ensure our tables exist
         DbIssueKeywordRecord.CreateTable(db);
         DbCorpusKeywordRecord.CreateTable(db);
         DbTotalFrequencyRecord.CreateTable(db);
+        DbBm25ConfigRecord.CreateTable(db);
+        DbDocumentStatsRecord.CreateTable(db);
 
         // get current indexes
         DbIssueKeywordRecord.LoadMaxKey(db);
         DbCorpusKeywordRecord.LoadMaxKey(db);
         DbTotalFrequencyRecord.LoadMaxKey(db);
+        DbBm25ConfigRecord.LoadMaxKey(db);
+        DbDocumentStatsRecord.LoadMaxKey(db);
         
         processIssues(db);
+        
+        // calculate BM25 scores after keyword processing
+        processBm25Scores(db);
     }
 
 
@@ -190,6 +199,27 @@ public class KeywordProcessor
         // insert total frequencies
         totalFrequenciesByIssue.Values.Insert(db);
         totalFrequencies.Insert(db);
+    }
+
+    private void processBm25Scores(SqliteConnection db)
+    {
+        Console.WriteLine("Starting BM25 score calculation...");
+        
+        Bm25Calculator calculator = new Bm25Calculator();
+        
+        // store BM25 configuration
+        calculator.StoreBm25Config(db);
+        
+        // calculate and store document statistics
+        calculator.StoreDocumentStats(db);
+        
+        // calculate IDF values for all corpus keywords
+        calculator.CalculateCorpusIdf(db);
+        
+        // calculate BM25 scores for all issue keywords
+        calculator.CalculateDocumentBm25Scores(db);
+        
+        Console.WriteLine("BM25 score calculation completed.");
     }
 
     private void countFromString(
