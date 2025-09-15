@@ -9,12 +9,12 @@ namespace jira_fhir_cli;
 public record class CliOptions
 {
     public static readonly List<(string, Command)> Commands = [
+        (CliDownloadCommand.CommandName, new CliDownloadCommand()),
         (CliLoadXmlCommand.CommandName, new CliLoadXmlCommand()),
         (CliBuildFtsCommand.CommandName, new CliBuildFtsCommand()),
         (CliExtractKeywordsCommand.CommandName, new CliExtractKeywordsCommand()),
         (CliSearchBm25Command.CommandName, new CliSearchBm25Command()),
         (CliSummarizeCommand.CommandName, new CliSummarizeCommand()),
-        (CliDownloadCommand.CommandName, new CliDownloadCommand()),
     ];
 
     public Option<bool> DebugMode { get; set; } = new Option<bool>(

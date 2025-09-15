@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jira-fhir-cli", "src\jira-f
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jira-fhir-cli.Tests", "src\jira-fhir-cli.Tests\jira-fhir-cli.Tests.csproj", "{888CD6A1-A2A9-4CDE-9373-675590A7FB51}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jira-fhir-mcp", "src\jira-fhir-mcp\jira-fhir-mcp.csproj", "{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Release|Any CPU.Build.0 = Release|Any CPU
+		{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

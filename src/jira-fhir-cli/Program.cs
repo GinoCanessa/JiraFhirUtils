@@ -14,6 +14,7 @@ internal abstract class Program
     {
         // Build configuration with User Secrets support
         IConfiguration configuration = new ConfigurationBuilder()
+            .AddJsonFile("appsettings.json", optional: true)
             .AddEnvironmentVariables()
             .AddUserSecrets<Program>()
             .Build();
