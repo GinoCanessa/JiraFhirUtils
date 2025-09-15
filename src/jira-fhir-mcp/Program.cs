@@ -2,6 +2,7 @@
 using System.CommandLine;
 using System.Text.RegularExpressions;
 using jira_fhir_mcp.Tools;
+using jira_fhir_mcp.Services;
 using JiraFhirUtils.Common;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
@@ -127,6 +128,9 @@ public abstract partial class Program
 
             // add our configuration
             builder.Services.AddSingleton(config);
+
+            // add database service
+            builder.Services.AddSingleton<DatabaseService>();
 
             ToolProcessor toolProcessor = new();
             builder.Services.AddSingleton<ToolProcessor>(toolProcessor);
