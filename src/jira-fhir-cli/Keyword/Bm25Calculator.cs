@@ -172,7 +172,7 @@ public class Bm25Calculator
     {
         using IDbCommand command = db.CreateCommand();
         command.CommandText = "SELECT COUNT(DISTINCT IssueId) FROM issue_keywords WHERE Keyword = @keyword AND KeywordType = @keywordType;";
-        
+
         var keywordParam = command.CreateParameter();
         keywordParam.ParameterName = "@keyword";
         keywordParam.Value = keyword;
@@ -180,7 +180,7 @@ public class Bm25Calculator
 
         var typeParam = command.CreateParameter();
         typeParam.ParameterName = "@keywordType";
-        typeParam.Value = (int)keywordType;
+        typeParam.Value = keywordType.ToString();
         command.Parameters.Add(typeParam);
 
         object? result = command.ExecuteScalar();
@@ -191,7 +191,7 @@ public class Bm25Calculator
     {
         using IDbCommand command = db.CreateCommand();
         command.CommandText = "SELECT Idf FROM corpus_keywords WHERE Keyword = @keyword AND KeywordType = @keywordType;";
-        
+
         var keywordParam = command.CreateParameter();
         keywordParam.ParameterName = "@keyword";
         keywordParam.Value = keyword;
@@ -199,7 +199,7 @@ public class Bm25Calculator
 
         var typeParam = command.CreateParameter();
         typeParam.ParameterName = "@keywordType";
-        typeParam.Value = (int)keywordType;
+        typeParam.Value = keywordType.ToString();
         command.Parameters.Add(typeParam);
 
         object? result = command.ExecuteScalar();
