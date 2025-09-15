@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using jira_fhir_mcp.Services;
 
 namespace jira_fhir_mcp.Tools;
 
@@ -31,7 +32,7 @@ public class ToolProcessor
         };
 
         _localTools = [
-            // new GetStoreList(),
+            new ListIssuesTool(),
         ];
 
         _mcpTools = _localTools.Select(t => t.McpTool).ToList();

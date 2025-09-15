@@ -784,6 +784,8 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             string[]? orderByProperties = null, 
                             string? orderByDirection = null, 
                             bool orJoinConditions = false, 
+                            int? resultLimit = null,
+                            int? resultOffset = null,
                             {{{string.Join(", ", getFnFilterParams(true))}}})
                         {
                             dbTableName ??= "{{{tableName}}}";
@@ -811,7 +813,16 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                                     command.CommandText += $" ASC";
                                 }
                             }
-                    
+                                
+                            if (resultLimit.HasValue && (resultLimit.Value > 0))
+                            {
+                                command.CommandText += $" LIMIT {resultLimit.Value}";
+                                if (resultOffset.HasValue && (resultOffset.Value > 0))
+                                {
+                                    command.CommandText += $" OFFSET {resultOffset.Value}";
+                                }
+                            }
+                                
                             using (IDataReader reader = command.ExecuteReader())
                             {
                                 while (reader.Read())
@@ -1245,10 +1256,20 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             string[]? orderByProperties = null,
                             string? orderByDirection = null,
                             bool orJoinConditions = false,
+                            int? resultLimit = null,
+                            int? resultOffset = null,
                             {{{string.Join(", ", getFnFilterParams(true))}}})
                             where T : {{{className}}}
                         {
-                            return {{{className}}}.SelectList(dbCon, dbTableName, orderByProperties, orderByDirection, orJoinConditions, {{{string.Join(", ", getFnFilterArgs(true))}}});
+                            return {{{className}}}.SelectList(
+                                dbCon,
+                                dbTableName,
+                                orderByProperties,
+                                orderByDirection,
+                                orJoinConditions,
+                                resultLimit,
+                                resultOffset,
+                                {{{string.Join(", ", getFnFilterArgs(true))}}});
                         }
 
                         public static int SelectCount<T>(

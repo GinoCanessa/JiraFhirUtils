@@ -13,11 +13,6 @@ namespace jira_fhir_mcp.Tools;
 public abstract class BaseJiraTool : ITool
 {
     /// <summary>
-    /// Database service for executing queries
-    /// </summary>
-    protected readonly DatabaseService _databaseService;
-
-    /// <summary>
     /// JSON serializer options with camelCase naming policy
     /// </summary>
     protected static readonly JsonSerializerOptions JsonOptions = new()
@@ -31,9 +26,8 @@ public abstract class BaseJiraTool : ITool
     /// Initialize base tool with database service
     /// </summary>
     /// <param name="databaseService">Database service for data access</param>
-    protected BaseJiraTool(DatabaseService databaseService)
+    protected BaseJiraTool()
     {
-        _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
     }
 
     /// <summary>
@@ -191,46 +185,7 @@ public abstract class BaseJiraTool : ITool
             return defaultValue;
         }
     }
-
-    /// <summary>
-    /// Execute database query with error handling
-    /// </summary>
-    /// <param name="query">SQL query to execute</param>
-    /// <param name="parameters">Query parameters</param>
-    /// <returns>Query results or null on error</returns>
-    protected async Task<List<Dictionary<string, object?>>?> ExecuteQuerySafeAsync(string query, params SqliteParameter[] parameters)
-    {
-        try
-        {
-            return await _databaseService.ExecuteQueryAsync(query, parameters);
-        }
-        catch (Exception ex)
-        {
-            // Log error if needed, but return null to indicate failure
-            Console.Error.WriteLine($"Database query failed: {ex.Message}");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Execute scalar database query with error handling
-    /// </summary>
-    /// <param name="query">SQL query to execute</param>
-    /// <param name="parameters">Query parameters</param>
-    /// <returns>Scalar result or null on error</returns>
-    protected async Task<object?> ExecuteScalarSafeAsync(string query, params SqliteParameter[] parameters)
-    {
-        try
-        {
-            return await _databaseService.ExecuteScalarAsync(query, parameters);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Database scalar query failed: {ex.Message}");
-            return null;
-        }
-    }
-
+    
     /// <summary>
     /// Create successful CallToolResult with JSON content
     /// </summary>
@@ -260,30 +215,5 @@ public abstract class BaseJiraTool : ITool
             ],
             IsError = true
         };
-    }
-
-    /// <summary>
-    /// Build dynamic WHERE clause for database queries
-    /// </summary>
-    /// <param name="conditions">List of WHERE conditions</param>
-    /// <returns>WHERE clause string or empty string</returns>
-    protected static string BuildWhereClause(IEnumerable<string> conditions)
-    {
-        var conditionList = conditions.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
-        return conditionList.Count > 0 ? " WHERE " + string.Join(" AND ", conditionList) : "";
-    }
-
-    /// <summary>
-    /// Create pagination parameters for LIMIT/OFFSET queries
-    /// </summary>
-    /// <param name="limit">Maximum number of results</param>
-    /// <param name="offset">Number of results to skip</param>
-    /// <returns>Array of SqliteParameter for pagination</returns>
-    protected static SqliteParameter[] CreatePaginationParameters(int limit, int offset)
-    {
-        return [
-            DatabaseService.CreateParameter("@limit", limit),
-            DatabaseService.CreateParameter("@offset", offset)
-        ];
     }
 }

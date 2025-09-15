@@ -169,6 +169,10 @@ public abstract partial class Program
             // this is developer tooling - always respond with as much detail as we can
             app.UseDeveloperExceptionPage();
 
+            // Initialize DatabaseService
+            DatabaseService databaseService = app.Services.GetRequiredService<DatabaseService>();
+            databaseService.Initialize();
+
             // map our MCP services, use a /mcp prefix to avoid collisions with other services (e.g., UI)
             app.MapMcp("/mcp");
             
