@@ -15,6 +15,7 @@ public record class CliOptions
         (CliExtractKeywordsCommand.CommandName, new CliExtractKeywordsCommand()),
         (CliSearchBm25Command.CommandName, new CliSearchBm25Command()),
         (CliSummarizeCommand.CommandName, new CliSummarizeCommand()),
+        (CliFixScoresCommand.CommandName, new CliFixScoresCommand()),
     ];
 
     public Option<bool> DebugMode { get; set; } = new Option<bool>(
@@ -216,6 +217,13 @@ public record class CliOptions
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => false,
     };
+
+    public Option<bool> ShowProgress { get; set; } = new Option<bool>("--show-progress")
+    {
+        Description = "Show progress during score recalculation.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => true,
+    };
 }
 
 public record class CliConfig
@@ -247,6 +255,7 @@ public record class CliConfig
     public double Bm25K1 { get; init; }
     public double Bm25B { get; init; }
     public bool ShowTopKeywords { get; init; }
+    public bool ShowProgress { get; init; }
     public IConfiguration Configuration { get; init; }
 
     public CliConfig() { Configuration = null!; }
@@ -335,6 +344,7 @@ public record class CliConfig
         Bm25K1 = pr.GetValue(opt.Bm25K1);
         Bm25B = pr.GetValue(opt.Bm25B);
         ShowTopKeywords = pr.GetValue(opt.ShowTopKeywords);
+        ShowProgress = pr.GetValue(opt.ShowProgress);
     }
 
     private string? getDefaultApiEndpoint(string? provider) => provider?.ToLowerInvariant() switch
@@ -484,5 +494,23 @@ public class CliSearchBm25Command : Command
         this.Add(_cliOptions.Bm25K1);
         this.Add(_cliOptions.Bm25B);
         this.Add(_cliOptions.ShowTopKeywords);
+    }
+}
+
+public class CliFixScoresCommand : Command
+{
+    public const string CommandName = "fix-scores";
+    private CliOptions _cliOptions = new();
+    public CliOptions CommandCliOptions => _cliOptions;
+
+    public CliFixScoresCommand() : base(CommandName, "Recalculate IDF and BM25 scores using existing frequency counts")
+    {
+        // Add required options
+        this.Add(_cliOptions.DbPath);
+
+        // Add optional options
+        this.Add(_cliOptions.Bm25K1);
+        this.Add(_cliOptions.Bm25B);
+        this.Add(_cliOptions.ShowProgress);
     }
 }

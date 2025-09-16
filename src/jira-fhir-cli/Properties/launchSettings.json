@@ -23,6 +23,10 @@
     "extract-keywords": {
       "commandName": "Project",
       "commandLineArgs": "extract-keywords --fhir-spec-database fhir.sqlite"
+    },
+    "fix-scores": {
+      "commandName": "Project",
+      "commandLineArgs": "fix-scores --db-path jira_issues.sqlite"
     }
   }
 }

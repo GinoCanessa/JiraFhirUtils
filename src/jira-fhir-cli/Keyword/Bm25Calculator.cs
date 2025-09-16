@@ -126,7 +126,7 @@ public class Bm25Calculator
         
         foreach (DbIssueKeywordRecord issueKeyword in issueKeywords)
         {
-            double? idf = GetIdfForKeyword(db, issueKeyword.Keyword, issueKeyword.KeywordType);
+            double? idf = DbCorpusKeywordRecord.SelectSingle(db, Keyword: issueKeyword.Keyword, KeywordType: issueKeyword.KeywordType)?.Idf;
             if (idf.HasValue)
             {
                 issueKeyword.Bm25Score = CalculateBm25Score(
@@ -146,17 +146,35 @@ public class Bm25Calculator
 
     public double CalculateAverageDocumentLength(SqliteConnection db)
     {
-        List<DbTotalFrequencyRecord> issueStats = DbTotalFrequencyRecord.SelectList(db)
-            .Where(tf => tf.IssueId.HasValue && tf.TotalWords > 0)
-            .ToList();
-
-        if (issueStats.Count == 0)
+        int issueCount;
         {
-            return 0.0;
+            using IDbCommand command = db.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM {DbTotalFrequencyRecord.DefaultTableName} WHERE IssueId IS NOT NULL;";
+            
+            object? result = command.ExecuteScalar();
+            issueCount = result != null ? Convert.ToInt32(result) : 0;
+
+            if (issueCount == 0)
+            {
+                return 0.0;
+            }
+        }
+        
+        int wordCount;
+        {
+            using IDbCommand command = db.CreateCommand();
+            command.CommandText = $"SELECT SUM(TotalWords) FROM {DbTotalFrequencyRecord.DefaultTableName} WHERE IssueId IS NOT NULL;";
+            
+            object? result = command.ExecuteScalar();
+            wordCount = result != null ? Convert.ToInt32(result) : 0;
+
+            if (wordCount == 0)
+            {
+                return 0.0;
+            }
         }
 
-        double totalWords = issueStats.Sum(stats => stats.TotalWords);
-        return totalWords / issueStats.Count;
+        return (wordCount * 1.0d) / (issueCount * 1.0d);
     }
 
     private int GetTotalDocumentCount(SqliteConnection db)
@@ -185,25 +203,6 @@ public class Bm25Calculator
 
         object? result = command.ExecuteScalar();
         return result != null ? Convert.ToInt32(result) : 0;
-    }
-
-    private double? GetIdfForKeyword(SqliteConnection db, string keyword, KeywordTypeCodes keywordType)
-    {
-        using IDbCommand command = db.CreateCommand();
-        command.CommandText = "SELECT Idf FROM corpus_keywords WHERE Keyword = @keyword AND KeywordType = @keywordType;";
-
-        var keywordParam = command.CreateParameter();
-        keywordParam.ParameterName = "@keyword";
-        keywordParam.Value = keyword;
-        command.Parameters.Add(keywordParam);
-
-        var typeParam = command.CreateParameter();
-        typeParam.ParameterName = "@keywordType";
-        typeParam.Value = keywordType.ToString();
-        command.Parameters.Add(typeParam);
-
-        object? result = command.ExecuteScalar();
-        return result != DBNull.Value && result != null ? Convert.ToDouble(result) : null;
     }
 
     public void StoreDocumentStats(SqliteConnection db)
@@ -252,7 +251,7 @@ public class Bm25Calculator
     public static (double k1, double b) LoadBm25Config(SqliteConnection db)
     {
         List<DbBm25ConfigRecord> configs = DbBm25ConfigRecord.SelectList(db);
-        
+
         if (configs.Count > 0)
         {
             DbBm25ConfigRecord config = configs.OrderByDescending(c => c.LastUpdated).First();
@@ -260,5 +259,262 @@ public class Bm25Calculator
         }
 
         return (1.2, 0.75);
+    }
+
+    /// <summary>
+    /// Updates IDF values for existing corpus keywords without dropping tables
+    /// </summary>
+    public void UpdateCorpusIdf(SqliteConnection db, Action<string>? progressCallback = null)
+    {
+        progressCallback?.Invoke("Starting IDF update for corpus keywords...");
+
+        // Validate that required data exists
+        if (!DbCorpusKeywordRecord.ValidateCorpusKeywordsExist(db))
+        {
+            throw new InvalidOperationException("No corpus keywords found. Cannot update IDF values.");
+        }
+
+        int totalDocuments = GetTotalDocumentCount(db);
+        progressCallback?.Invoke($"Total documents: {totalDocuments}");
+
+        if (totalDocuments <= 0)
+        {
+            throw new InvalidOperationException("No documents found. Cannot calculate IDF values.");
+        }
+
+        int keywordCount = DbCorpusKeywordRecord.SelectCount(db);
+        progressCallback?.Invoke($"Updating IDF for {keywordCount} corpus keywords...");
+
+        const int batchSize = 5000;
+        int processed = 0;
+
+        for (int i = 0; i < keywordCount; i += batchSize)
+        {
+            List<DbCorpusKeywordRecord> batch = DbCorpusKeywordRecord.SelectList(
+                db,
+                resultLimit: batchSize,
+                resultOffset: i,
+                orderByProperties: [nameof(DbCorpusKeywordRecord.Id)]);
+
+            // Calculate IDF for each keyword in the batch
+            foreach (DbCorpusKeywordRecord keyword in batch)
+            {
+                int documentsContainingTerm = GetDocumentCountForKeyword(db, keyword.Keyword, keyword.KeywordType);
+                keyword.Idf = CalculateIdf(totalDocuments, documentsContainingTerm);
+                processed++;
+            }
+
+            // Update the batch
+            batch.Update(db);
+
+            progressCallback?.Invoke($"Processed {processed}/{keywordCount} keywords ({(double)processed / keywordCount * 100:F1}%)");
+        }
+
+        progressCallback?.Invoke("IDF update completed successfully.");
+    }
+
+    /// <summary>
+    /// Updates BM25 scores for existing issue keywords without dropping tables
+    /// </summary>
+    public void UpdateIssueBm25Scores(SqliteConnection db, Action<string>? progressCallback = null)
+    {
+        progressCallback?.Invoke("Starting BM25 score update for issue keywords...");
+
+        // Validate that required data exists
+        if (!DbIssueKeywordRecord.ValidateIssueKeywordsExist(db))
+        {
+            throw new InvalidOperationException("No issue keywords found. Cannot update BM25 scores.");
+        }
+
+        if (!DbCorpusKeywordRecord.ValidateCorpusKeywordsExist(db))
+        {
+            throw new InvalidOperationException("No corpus keywords found. Cannot calculate BM25 scores without IDF values.");
+        }
+
+        double averageDocumentLength = CalculateAverageDocumentLength(db);
+        progressCallback?.Invoke($"Average document length: {averageDocumentLength:F2}");
+
+        if (averageDocumentLength <= 0)
+        {
+            throw new InvalidOperationException("Average document length is 0. Cannot calculate BM25 scores.");
+        }
+
+        List<IssueRecord> issues = IssueRecord.SelectList(db);
+        progressCallback?.Invoke($"Processing BM25 scores for {issues.Count} issues...");
+
+        int processedIssues = 0;
+        var bm25Updates = new Dictionary<(int issueId, string keyword, KeywordTypeCodes keywordType), double>();
+
+        using (SqliteTransaction transaction = db.BeginTransaction())
+        {
+            try
+            {
+                foreach (IssueRecord issue in issues)
+                {
+                    ProcessIssueKeywordsForUpdate(db, issue.Id, averageDocumentLength, bm25Updates);
+                    processedIssues++;
+
+                    // Process in batches to avoid memory issues
+                    if (bm25Updates.Count >= 500)
+                    {
+                        DbIssueKeywordRecord.UpdateBm25ScoreBulk(db, bm25Updates, transaction);
+                        bm25Updates.Clear();
+                    }
+
+                    if (processedIssues % 100 == 0)
+                    {
+                        progressCallback?.Invoke($"Processing issue {processedIssues}/{issues.Count} ({(double)processedIssues / issues.Count * 100:F1}%)");
+                    }
+                }
+
+                // Process any remaining updates
+                if (bm25Updates.Count > 0)
+                {
+                    DbIssueKeywordRecord.UpdateBm25ScoreBulk(db, bm25Updates, transaction);
+                }
+
+                transaction.Commit();
+                progressCallback?.Invoke("BM25 score update completed successfully.");
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Helper method for processing issue keywords and collecting BM25 score updates
+    /// </summary>
+    private void ProcessIssueKeywordsForUpdate(SqliteConnection db, int issueId, double averageDocumentLength, Dictionary<(int, string, KeywordTypeCodes), double> bm25Updates)
+    {
+        List<DbIssueKeywordRecord> issueKeywords = DbIssueKeywordRecord.SelectList(db, IssueId: issueId);
+
+        DbTotalFrequencyRecord? issueStats = DbTotalFrequencyRecord.SelectList(db, IssueId: issueId).FirstOrDefault();
+        if (issueStats == null)
+        {
+            return; // Skip issues without frequency stats
+        }
+
+        int documentLength = issueStats.TotalWords;
+
+        foreach (DbIssueKeywordRecord issueKeyword in issueKeywords)
+        {
+            double? idf = DbCorpusKeywordRecord.SelectSingle(db, Keyword: issueKeyword.Keyword, KeywordType: issueKeyword.KeywordType)?.Idf;
+            if (idf.HasValue)
+            {
+                double bm25Score = CalculateBm25Score(
+                    issueKeyword.Count,
+                    idf.Value,
+                    documentLength,
+                    averageDocumentLength);
+
+                bm25Updates[(issueId, issueKeyword.Keyword, issueKeyword.KeywordType)] = bm25Score;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Main entry point for recalculating all IDF and BM25 scores using existing frequency data
+    /// </summary>
+    public void RecalculateAllScores(SqliteConnection db, Action<string>? progressCallback = null)
+    {
+        progressCallback?.Invoke("Starting complete score recalculation...");
+
+        // Validate that frequency tables exist
+        progressCallback?.Invoke("Validating required data exists...");
+
+        if (!DbCorpusKeywordRecord.ValidateCorpusKeywordsExist(db))
+        {
+            throw new InvalidOperationException("Corpus keywords table is empty. Run extract-keywords first to populate frequency data.");
+        }
+
+        if (!DbIssueKeywordRecord.ValidateIssueKeywordsExist(db))
+        {
+            throw new InvalidOperationException("Issue keywords table is empty. Run extract-keywords first to populate frequency data.");
+        }
+
+        // Step 1: Update IDF values
+        progressCallback?.Invoke("Phase 1/3: Updating IDF values...");
+        UpdateCorpusIdf(db, progressCallback);
+
+        // Step 2: Update BM25 scores
+        progressCallback?.Invoke("Phase 2/3: Updating BM25 scores...");
+        UpdateIssueBm25Scores(db, progressCallback);
+
+        // Step 3: Update statistics and config tables
+        progressCallback?.Invoke("Phase 3/3: Updating statistics and configuration...");
+        UpdateDocumentStats(db);
+        UpdateBm25Config(db);
+
+        progressCallback?.Invoke("Score recalculation completed successfully!");
+    }
+
+    /// <summary>
+    /// Updates document stats without dropping the table
+    /// </summary>
+    private void UpdateDocumentStats(SqliteConnection db)
+    {
+        double avgDocLength = CalculateAverageDocumentLength(db);
+        int totalDocs = GetTotalDocumentCount(db);
+
+        // Check if table exists and has data
+        List<DbDocumentStatsRecord> existingStats = DbDocumentStatsRecord.SelectList(db);
+
+        if (existingStats.Count > 0)
+        {
+            // Update existing record
+            var stats = existingStats.First();
+            stats.AverageDocumentLength = avgDocLength;
+            stats.TotalDocumentCount = totalDocs;
+            stats.LastCalculated = DateTime.UtcNow;
+            stats.Update(db);
+        }
+        else
+        {
+            // Create new record
+            DbDocumentStatsRecord.LoadMaxKey(db);
+            DbDocumentStatsRecord stats = new()
+            {
+                Id = DbDocumentStatsRecord.GetIndex(),
+                AverageDocumentLength = avgDocLength,
+                TotalDocumentCount = totalDocs,
+                LastCalculated = DateTime.UtcNow
+            };
+            stats.Insert(db);
+        }
+    }
+
+    /// <summary>
+    /// Updates BM25 config without dropping the table
+    /// </summary>
+    private void UpdateBm25Config(SqliteConnection db)
+    {
+        // Check if table exists and has data
+        List<DbBm25ConfigRecord> existingConfigs = DbBm25ConfigRecord.SelectList(db);
+
+        if (existingConfigs.Count > 0)
+        {
+            // Update existing record
+            var config = existingConfigs.OrderByDescending(c => c.LastUpdated).First();
+            config.K1 = _k1;
+            config.B = _b;
+            config.LastUpdated = DateTime.UtcNow;
+            config.Update(db);
+        }
+        else
+        {
+            // Create new record
+            DbBm25ConfigRecord.LoadMaxKey(db);
+            DbBm25ConfigRecord config = new()
+            {
+                Id = DbBm25ConfigRecord.GetIndex(),
+                K1 = _k1,
+                B = _b,
+                LastUpdated = DateTime.UtcNow
+            };
+            config.Insert(db);
+        }
     }
 }

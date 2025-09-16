@@ -47,6 +47,9 @@ internal abstract class Program
                 case CliDownloadCommand.CommandName:
                     cmd.SetAction((ParseResult pr) => downloadCommandHandler(pr, configuration));
                     break;
+                case CliFixScoresCommand.CommandName:
+                    cmd.SetAction((ParseResult pr) => fixScoresCommandHandler(pr, configuration));
+                    break;
             }
 
             root.Add(cmd);
@@ -183,7 +186,7 @@ internal abstract class Program
             _retVal = 1;
             return;
         }
-        
+
         CliConfig config = new(dc.CommandCliOptions, pr, configuration);
         try
         {
@@ -194,6 +197,29 @@ internal abstract class Program
         catch (Exception ex)
         {
             Console.WriteLine($"Error downloading JIRA files: {ex.Message}");
+            _retVal = ex.HResult;
+        }
+    }
+
+    private static async Task fixScoresCommandHandler(ParseResult pr, IConfiguration configuration)
+    {
+        if (pr.CommandResult.Command is not CliFixScoresCommand fsc)
+        {
+            Console.WriteLine("Incorrect mapping from command to command handler!");
+            _retVal = 1;
+            return;
+        }
+
+        CliConfig config = new(fsc.CommandCliOptions, pr, configuration);
+        try
+        {
+            Keyword.ScoreFixProcessor processor = new(config);
+            await processor.ProcessAsync();
+            _retVal = 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fixing BM25 scores: {ex.Message}");
             _retVal = ex.HResult;
         }
     }
