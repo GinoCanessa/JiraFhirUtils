@@ -343,65 +343,45 @@ public class Bm25Calculator
         progressCallback?.Invoke($"Processing BM25 scores for {issues.Count} issues...");
 
         int processedIssues = 0;
-        var bm25Updates = new Dictionary<(int issueId, string keyword, KeywordTypeCodes keywordType), double>();
 
-        using (SqliteTransaction transaction = db.BeginTransaction())
+        foreach (IssueRecord issue in issues)
         {
-            try
+            if (processedIssues % 100 == 0)
             {
-                foreach (IssueRecord issue in issues)
-                {
-                    ProcessIssueKeywordsForUpdate(db, issue.Id, averageDocumentLength, bm25Updates);
-                    processedIssues++;
-
-                    // Process in batches to avoid memory issues
-                    if (bm25Updates.Count >= 500)
-                    {
-                        DbIssueKeywordRecord.UpdateBm25ScoreBulk(db, bm25Updates, transaction);
-                        bm25Updates.Clear();
-                    }
-
-                    if (processedIssues % 100 == 0)
-                    {
-                        progressCallback?.Invoke($"Processing issue {processedIssues}/{issues.Count} ({(double)processedIssues / issues.Count * 100:F1}%)");
-                    }
-                }
-
-                // Process any remaining updates
-                if (bm25Updates.Count > 0)
-                {
-                    DbIssueKeywordRecord.UpdateBm25ScoreBulk(db, bm25Updates, transaction);
-                }
-
-                transaction.Commit();
-                progressCallback?.Invoke("BM25 score update completed successfully.");
+                progressCallback?.Invoke($"Processing issue {processedIssues}/{issues.Count} ({(double)processedIssues / issues.Count * 100:F1}%)");
             }
-            catch
+
+            List<DbIssueKeywordRecord>? issueKeywordUpdates = processIssueKeywordsForUpdate(db, issue.Id, averageDocumentLength);
+            processedIssues++;
+
+            if (issueKeywordUpdates == null)
             {
-                transaction.Rollback();
-                throw;
+                continue;
             }
+            
+            issueKeywordUpdates.Update(db);
         }
+
+        progressCallback?.Invoke("BM25 score update completed successfully.");
     }
 
     /// <summary>
     /// Helper method for processing issue keywords and collecting BM25 score updates
     /// </summary>
-    private void ProcessIssueKeywordsForUpdate(SqliteConnection db, int issueId, double averageDocumentLength, Dictionary<(int, string, KeywordTypeCodes), double> bm25Updates)
+    private List<DbIssueKeywordRecord>? processIssueKeywordsForUpdate(SqliteConnection db, int issueId, double averageDocumentLength)
     {
-        List<DbIssueKeywordRecord> issueKeywords = DbIssueKeywordRecord.SelectList(db, IssueId: issueId);
-
         DbTotalFrequencyRecord? issueStats = DbTotalFrequencyRecord.SelectList(db, IssueId: issueId).FirstOrDefault();
         if (issueStats == null)
         {
-            return; // Skip issues without frequency stats
+            return null; // Skip issues without frequency stats
         }
 
         int documentLength = issueStats.TotalWords;
-
-        foreach (DbIssueKeywordRecord issueKeyword in issueKeywords)
+        List<DbIssueKeywordRecord> issueKeywords = DbIssueKeywordRecord.SelectList(db, IssueId: issueId);
+        Parallel.ForEach(issueKeywords, issueKeyword =>
         {
-            double? idf = DbCorpusKeywordRecord.SelectSingle(db, Keyword: issueKeyword.Keyword, KeywordType: issueKeyword.KeywordType)?.Idf;
+            double? idf = DbCorpusKeywordRecord
+                .SelectSingle(db, Keyword: issueKeyword.Keyword, KeywordType: issueKeyword.KeywordType)?.Idf;
             if (idf.HasValue)
             {
                 double bm25Score = CalculateBm25Score(
@@ -410,9 +390,11 @@ public class Bm25Calculator
                     documentLength,
                     averageDocumentLength);
 
-                bm25Updates[(issueId, issueKeyword.Keyword, issueKeyword.KeywordType)] = bm25Score;
+                issueKeyword.Bm25Score = bm25Score;
             }
-        }
+        });
+        
+        return issueKeywords;
     }
 
     /// <summary>
