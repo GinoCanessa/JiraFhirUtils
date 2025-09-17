@@ -25,8 +25,7 @@ public class ListIssuesTool : BaseJiraTool
     /// <summary>
     /// Arguments definition for the tool
     /// </summary>
-    protected override IEnumerable<ToolArgumentRec> Arguments => new[]
-    {
+    protected override ToolArgumentRec[] Arguments => [
         new ToolArgumentRec("project", "string", "Filter by project key"),
         new ToolArgumentRec("workgroup", "string", "Filter by work group"),
         new ToolArgumentRec("resolution", "string", "Filter by resolution"),
@@ -48,7 +47,7 @@ public class ListIssuesTool : BaseJiraTool
         // new ToolArgumentRec("resolved_before", "string", "Filter by resolution date (ISO 8601)"),
         new ToolArgumentRec("sort", "string", "Sort field (id, key, created, updated, priority)"),
         new ToolArgumentRec("order", "string", "Sort order (asc or desc, default: desc)")
-    };
+    ];
 
     /// <summary>
     /// Constructor that accepts DatabaseService
@@ -65,8 +64,8 @@ public class ListIssuesTool : BaseJiraTool
     protected override CallToolResult ExecuteInternal(IReadOnlyDictionary<string, JsonElement>? arguments)
     {
         // Extract pagination parameters separately
-        int? limit = GetArgumentValue<int?>(arguments, "limit", null);
-        int? offset = GetArgumentValue<int?>(arguments, "offset", null);
+        int? limit = GetArgumentValue<int?>(arguments, "limit");
+        int? offset = GetArgumentValue<int?>(arguments, "offset");
 
         // Validate pagination parameters
         if (limit is <= 0)
@@ -85,14 +84,14 @@ public class ListIssuesTool : BaseJiraTool
         }
 
         // Extract and validate sort parameters
-        string? sortField = GetArgumentValue<string?>(arguments, "sort", null);
+        string? sortField = GetArgumentValue<string?>(arguments, "sort");
         string? sortOrder = GetArgumentValue<string?>(arguments, "order", "desc");
 
         // Normalize and validate sort order
         sortOrder = sortOrder?.ToLower() switch
         {
             "asc" => "ASC",
-            "desc" => "DESC",
+            // "desc" => "DESC",
             _ => "DESC",
         };
 

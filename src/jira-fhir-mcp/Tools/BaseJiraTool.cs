@@ -43,12 +43,12 @@ public abstract class BaseJiraTool : ITool
     /// <summary>
     /// Tool arguments definition for MCP schema
     /// </summary>
-    protected abstract IEnumerable<ToolArgumentRec> Arguments { get; }
+    protected abstract ToolArgumentRec[] Arguments { get; }
 
     /// <summary>
     /// Required argument names for validation
     /// </summary>
-    protected virtual IEnumerable<string> RequiredArguments => [];
+    protected virtual string[] RequiredArguments => [];
 
     /// <summary>
     /// MCP Tool definition built from Name, Description, and Arguments
