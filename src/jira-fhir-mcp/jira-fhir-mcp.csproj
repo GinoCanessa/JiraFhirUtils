@@ -5,6 +5,7 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <RootNamespace>jira_fhir_mcp</RootNamespace>
+        <LangVersion>14</LangVersion>
     </PropertyGroup>
 
     <ItemGroup>

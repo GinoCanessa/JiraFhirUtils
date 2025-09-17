@@ -33,6 +33,13 @@ public class ToolProcessor
 
         _localTools = [
             new ListIssuesTool(),
+            new ListRelatedIssuesTool(),
+            new FindRelatedIssuesTool(),
+            new SearchIssuesByKeywordsTool(),
+            new GetIssueDetailsTool(),
+            new GetIssueCommentsTool(),
+            new ListProjectsTool(),
+            new ListWorkGroupsTool(),
         ];
 
         _mcpTools = _localTools.Select(t => t.McpTool).ToList();

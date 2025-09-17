@@ -6,6 +6,7 @@
 		<TargetFramework>net9.0</TargetFramework>
 		<RootNamespace>jira_fhir_cli</RootNamespace>
 		<UserSecretsId>e8c4c2b7-3f9a-4e1b-8d6c-7a9f8c5e4d3b</UserSecretsId>
+		<LangVersion>14</LangVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

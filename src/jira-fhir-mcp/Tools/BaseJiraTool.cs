@@ -92,12 +92,12 @@ public abstract class BaseJiraTool : ITool
     /// <returns>Tool definition for MCP registration</returns>
     protected virtual Tool BuildMcpTool()
     {
-        var properties = new Dictionary<string, object>();
-        var required = new List<string>();
+        Dictionary<string, object> properties = new Dictionary<string, object>();
+        List<string> required = new List<string>();
 
-        foreach (var arg in Arguments)
+        foreach (ToolArgumentRec arg in Arguments)
         {
-            var property = new Dictionary<string, object>
+            Dictionary<string, object> property = new Dictionary<string, object>
             {
                 ["type"] = arg.JsonType,
                 ["description"] = arg.Description
@@ -111,7 +111,7 @@ public abstract class BaseJiraTool : ITool
             }
         }
 
-        var inputSchema = new Dictionary<string, object>
+        Dictionary<string, object> inputSchema = new Dictionary<string, object>
         {
             ["type"] = "object",
             ["properties"] = properties
@@ -123,8 +123,8 @@ public abstract class BaseJiraTool : ITool
         }
 
         // Convert to JsonElement
-        var jsonString = JsonSerializer.Serialize(inputSchema, JsonOptions);
-        var jsonElement = JsonSerializer.Deserialize<JsonElement>(jsonString);
+        string jsonString = JsonSerializer.Serialize(inputSchema, JsonOptions);
+        JsonElement jsonElement = JsonSerializer.Deserialize<JsonElement>(jsonString);
 
         return new Tool
         {
@@ -146,7 +146,7 @@ public abstract class BaseJiraTool : ITool
             return false;
         }
 
-        foreach (var requiredArg in RequiredArguments)
+        foreach (string requiredArg in RequiredArguments)
         {
             if (arguments == null ||
                 !arguments.ContainsKey(requiredArg) ||
