@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using ModelContextProtocol.Protocol;
 using jira_fhir_mcp.Services;
 using JiraFhirUtils.Common;
+using JiraFhirUtils.SQLiteGenerator;
 
 namespace jira_fhir_mcp.Tools;
 
@@ -92,38 +93,40 @@ public class FindRelatedIssuesTool : BaseJiraTool
                 }
             }
 
-            // Step 3: Get top 3 keywords for the issue
             List<DbIssueKeywordRecord> keywordRecords = DbIssueKeywordRecord.SelectList(
                 DatabaseService.Instance.Db,
                 IssueId: sourceIssue.Id,
-                resultLimit: 3,
+                resultLimit: 5,
+                Bm25Score: 0.0,
+                Bm25ScoreOperator: JfSQLiteUtils.JfNumericOperatorCodes.GreaterThan,
                 orderByProperties: [nameof(DbIssueKeywordRecord.Bm25Score)],
                 orderByDirection: "DESC"
             );
 
-            string keywords = string.Join(" OR ", keywordRecords.Select(k => k.Keyword));
+            string? keywords = null;
 
-            // Step 4: Query related issues using field matching
-            List<IssueRecord> fieldRelatedIssues = findFieldRelatedIssues(sourceIssue, issueKey, limit);
-
-            // Step 5: Query related issues using keyword matching (FTS)
             List<IssueRecord> keywordRelatedIssues = [];
-            if (!string.IsNullOrWhiteSpace(keywords))
+            if (keywordRecords.Count > 0)
             {
-                keywordRelatedIssues = FindKeywordRelatedIssues(keywords, issueKey, limit);
+                // filter keywords to within 6 points of the top score
+                double topScore = keywordRecords[0].Bm25Score ?? 0.0;
+                keywordRecords = keywordRecords.Where(kr => kr.Bm25Score > topScore).ToList();
+                
+                // find the issues related by keyword
+                keywordRelatedIssues = findKeywordRelatedIssues(sourceIssue, keywordRecords, limit);
             }
 
             // Step 6: Combine and deduplicate results
             Dictionary<string, IssueRecord> allMatches = new Dictionary<string, IssueRecord>();
 
-            // Add field matches
-            foreach (IssueRecord issue in fieldRelatedIssues)
-            {
-                if (issue.Key != issueKey)
-                {
-                    allMatches[issue.Key] = issue;
-                }
-            }
+            // // Add field matches
+            // foreach (IssueRecord issue in fieldRelatedIssues)
+            // {
+            //     if (issue.Key != issueKey)
+            //     {
+            //         allMatches[issue.Key] = issue;
+            //     }
+            // }
 
             // Add keyword matches
             foreach (IssueRecord issue in keywordRelatedIssues)
@@ -248,57 +251,180 @@ public class FindRelatedIssuesTool : BaseJiraTool
     }
     
     /// <summary>
-    /// Find issues related through keyword matching using FTS
+    /// Find issues related through keyword matching using BM25 scores
     /// Returns full IssueRecord objects
     /// </summary>
-    private List<IssueRecord> FindKeywordRelatedIssues(string keywords, string excludeKey, int limit)
+    private List<IssueRecord> findKeywordRelatedIssues(
+        IssueRecord sourceIssue,
+        List<DbIssueKeywordRecord> keywordRecords,
+        int limit)
     {
-        using SqliteConnection connection = new SqliteConnection($"Data Source={DatabaseService.Instance.DatabasePath};Mode=ReadOnly");
-        connection.Open();
-
-        string[] defaultSearchFields = new[] { "title", "description", "summary", "resolutionDescription" };
-        string[] ftsConditions = defaultSearchFields.Select(field => $"{field} MATCH @keywords").ToArray();
-
-        string ftsQuery = $"SELECT * FROM issues_fts WHERE ({string.Join(" OR ", ftsConditions)}) AND key != @exclude_key ORDER BY rank DESC LIMIT @limit";
-
-        using SqliteCommand command = new SqliteCommand(ftsQuery, connection);
-        command.Parameters.Add(new SqliteParameter("@keywords", keywords));
-        command.Parameters.Add(new SqliteParameter("@exclude_key", excludeKey));
-        command.Parameters.Add(new SqliteParameter("@limit", limit));
-
-        List<IssueRecord> results = new List<IssueRecord>();
         try
         {
-            using SqliteDataReader reader = command.ExecuteReader();
-            while (reader.Read())
+            // 
+            
+            // Parse keywords string "keyword1 OR keyword2 OR keyword3"
+            List<string> keywordList = ParseKeywords(keywords);
+            Dictionary<int, (double score, List<string> matchedKeywords)> issueScores = new();
+
+            // Get all keyword matches with single query using IN clause
+            if (keywordList.Count > 0)
             {
-                IssueRecord? issue = MapReaderToIssueRecord(reader);
-                if (issue != null)
+                using SqliteCommand command = DatabaseService.Instance.Db.CreateCommand();
+
+                // Build parameterized IN clause
+                List<string> parameters = new List<string>();
+                for (int i = 0; i < keywordList.Count; i++)
                 {
-                    results.Add(issue);
+                    string paramName = $"@keyword{i}";
+                    parameters.Add(paramName);
+                    command.Parameters.Add(new SqliteParameter(paramName, keywordList[i]));
+                }
+
+                command.CommandText = $@"
+                    SELECT IssueId, Keyword, Bm25Score
+                    FROM issue_keywords
+                    WHERE Keyword IN ({string.Join(", ", parameters)})
+                      AND Bm25Score IS NOT NULL
+                      AND Bm25Score > 0
+                    ORDER BY Bm25Score DESC";
+
+                using SqliteDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    int issueId = reader.GetInt32("IssueId");
+                    string keyword = reader.GetString("Keyword");
+                    double bm25Score = reader.GetDouble("Bm25Score");
+
+                    // Initialize score tracking for new issues
+                    if (!issueScores.ContainsKey(issueId))
+                    {
+                        issueScores[issueId] = (0, new List<string>());
+                    }
+
+                    // Add BM25 score and track matched keyword
+                    (double score, List<string> matchedKeywords) current = issueScores[issueId];
+                    issueScores[issueId] = (
+                        current.score + bm25Score,
+                        current.matchedKeywords.Concat(new[] { keyword }).ToList()
+                    );
                 }
             }
-        }
-        catch (SqliteException)
-        {
-            // If FTS5 fails, return empty list
-        }
 
-        return results;
+            // Get top N issue IDs by score, excluding the source issue
+            List<int> topIssueIds = issueScores
+                .OrderByDescending(kvp => kvp.Value.score)
+                .Take(limit * 2) // Take more to account for filtering
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            // Batch load full issue records and apply exclusion filter
+            List<IssueRecord> results = new();
+            if (topIssueIds.Count > 0)
+            {
+                // Create parameterized IN clause for batch loading
+                using SqliteCommand command = DatabaseService.Instance.Db.CreateCommand();
+                List<string> parameters = new List<string>();
+                for (int i = 0; i < topIssueIds.Count; i++)
+                {
+                    string paramName = $"@issueId{i}";
+                    parameters.Add(paramName);
+                    command.Parameters.Add(new SqliteParameter(paramName, topIssueIds[i]));
+                }
+
+                command.CommandText = $@"
+                    SELECT * FROM issues
+                    WHERE Id IN ({string.Join(", ", parameters)})
+                    ORDER BY
+                        CASE Id {string.Join(" ", topIssueIds.Select((id, idx) => $"WHEN {id} THEN {idx}"))} END";
+
+                using SqliteDataReader reader = command.ExecuteReader();
+                while (reader.Read() && results.Count < limit)
+                {
+                    IssueRecord? issue = MapReaderToIssueRecord(reader);
+                    if (issue != null && issue.Key != excludeKey)
+                    {
+                        results.Add(issue);
+                    }
+                }
+            }
+
+            return results;
+        }
+        catch
+        {
+            // If BM25 search fails, return empty list
+            return new List<IssueRecord>();
+        }
     }
 
     /// <summary>
-    /// Map SqliteDataReader to IssueRecord object
-    /// This is a simplified mapper - might need adjustment based on actual IssueRecord structure
+    /// Parse keywords string "keyword1 OR keyword2 OR keyword3" into individual keywords
+    /// </summary>
+    private List<string> ParseKeywords(string keywordString)
+    {
+        return keywordString
+            .Split(new[] { " OR " }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(k => k.Trim())
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Map SqliteDataReader to IssueRecord object directly from database fields
     /// </summary>
     private IssueRecord? MapReaderToIssueRecord(SqliteDataReader reader)
     {
         try
         {
-            // Since we don't have direct access to IssueRecord constructor with reader,
-            // we'll use the Key to get the full record via SelectSingle
-            string key = reader.GetString("key");
-            return IssueRecord.SelectSingle(DatabaseService.Instance.Db, Key: key);
+            return new IssueRecord
+            {
+                Id = reader.GetInt32("Id"),
+                Key = reader.GetString("Key"),
+                Title = reader.GetString("Title"),
+                IssueUrl = reader.GetString("IssueUrl"),
+                ProjectId = reader.GetInt32("ProjectId"),
+                ProjectKey = reader.GetString("ProjectKey"),
+                Description = reader.GetString("Description"),
+                Summary = reader.IsDBNull("Summary") ? null : reader.GetString("Summary"),
+                Type = reader.GetString("Type"),
+                TypeId = reader.GetInt32("TypeId"),
+                Priority = reader.IsDBNull("Priority") ? null : reader.GetString("Priority"),
+                PriorityId = reader.IsDBNull("PriorityId") ? null : reader.GetInt32("PriorityId"),
+                Status = reader.IsDBNull("Status") ? null : reader.GetString("Status"),
+                StatusId = reader.GetInt32("StatusId"),
+                Resolution = reader.GetString("Resolution"),
+                ResolutionId = reader.GetInt32("ResolutionId"),
+                Assignee = reader.IsDBNull("Assignee") ? null : reader.GetString("Assignee"),
+                Reporter = reader.IsDBNull("Reporter") ? null : reader.GetString("Reporter"),
+                CreatedAt = reader.IsDBNull("CreatedAt") ? null : reader.GetDateTime("CreatedAt"),
+                UpdatedAt = reader.IsDBNull("UpdatedAt") ? null : reader.GetDateTime("UpdatedAt"),
+                ResolvedAt = reader.IsDBNull("ResolvedAt") ? null : reader.GetDateTime("ResolvedAt"),
+                Watches = reader.IsDBNull("Watches") ? null : reader.GetString("Watches"),
+                Specification = reader.IsDBNull("Specification") ? null : reader.GetString("Specification"),
+                AppliedForVersion = reader.IsDBNull("AppliedForVersion") ? null : reader.GetString("AppliedForVersion"),
+                ChangeCategory = reader.IsDBNull("ChangeCategory") ? null : reader.GetString("ChangeCategory"),
+                ChangeImpact = reader.IsDBNull("ChangeImpact") ? null : reader.GetString("ChangeImpact"),
+                DuplicateIssue = reader.IsDBNull("DuplicateIssue") ? null : reader.GetString("DuplicateIssue"),
+                DuplicateVotedIssue = reader.IsDBNull("DuplicateVotedIssue") ? null : reader.GetString("DuplicateVotedIssue"),
+                Grouping = reader.IsDBNull("Grouping") ? null : reader.GetString("Grouping"),
+                RaisedInVersion = reader.IsDBNull("RaisedInVersion") ? null : reader.GetString("RaisedInVersion"),
+                RelatedIssues = reader.IsDBNull("RelatedIssues") ? null : reader.GetString("RelatedIssues"),
+                RelatedArtifacts = reader.IsDBNull("RelatedArtifacts") ? null : reader.GetString("RelatedArtifacts"),
+                RelatedPages = reader.IsDBNull("RelatedPages") ? null : reader.GetString("RelatedPages"),
+                RelatedSections = reader.IsDBNull("RelatedSections") ? null : reader.GetString("RelatedSections"),
+                RelatedUrl = reader.IsDBNull("RelatedUrl") ? null : reader.GetString("RelatedUrl"),
+                ResolutionDescription = reader.IsDBNull("ResolutionDescription") ? null : reader.GetString("ResolutionDescription"),
+                VoteDate = reader.IsDBNull("VoteDate") ? null : reader.GetDateTime("VoteDate"),
+                Vote = reader.IsDBNull("Vote") ? null : reader.GetString("Vote"),
+                BlockVote = reader.IsDBNull("BlockVote") ? null : reader.GetString("BlockVote"),
+                WorkGroup = reader.IsDBNull("WorkGroup") ? null : reader.GetString("WorkGroup"),
+                SelectedBallot = reader.IsDBNull("SelectedBallot") ? null : reader.GetString("SelectedBallot"),
+                RequestInPerson = reader.IsDBNull("RequestInPerson") ? null : reader.GetString("RequestInPerson"),
+                AiIssueSummary = reader.IsDBNull("AiIssueSummary") ? null : reader.GetString("AiIssueSummary"),
+                AiCommentSummary = reader.IsDBNull("AiCommentSummary") ? null : reader.GetString("AiCommentSummary"),
+                AiResolutionSummary = reader.IsDBNull("AiResolutionSummary") ? null : reader.GetString("AiResolutionSummary")
+            };
         }
         catch
         {
