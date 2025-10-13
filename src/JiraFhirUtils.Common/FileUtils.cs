@@ -58,8 +58,6 @@ public static class FileUtils
 
         while (!Directory.Exists(testDir))
         {
-            currentDir = Path.GetFullPath(Path.Combine(currentDir, ".."));
-
             if (currentDir == Path.GetPathRoot(currentDir))
             {
                 if (throwIfNotFound)
@@ -70,6 +68,7 @@ public static class FileUtils
                 return null;
             }
 
+            currentDir = Path.GetFullPath(Path.Combine(currentDir, ".."));
             testDir = Path.Combine(currentDir, dirName);
         }
 

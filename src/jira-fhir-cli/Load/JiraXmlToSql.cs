@@ -39,17 +39,17 @@ internal class JiraXmlToSql
             return;
         }
         
-        using SqliteConnection connection = new SqliteConnection($"Data Source={_config.DbPath}");
-        await connection.OpenAsync();
+        using SqliteConnection db = new SqliteConnection($"Data Source={_config.DbPath}");
+        await db.OpenAsync();
 
         // drop tables first, if requested
         if (_config.DropTables)
         {
-            DropTables(connection);
+            DropTables(db);
         }
 
         // create the tables
-        CreateTablesAndIndexes(connection);
+        CreateTablesAndIndexes(db);
 
         // check for XML files we need to process
         List<string> xmlFiles = Directory.EnumerateFiles(_config.JiraXmlDir, XmlFilePattern, SearchOption.AllDirectories).ToList();
@@ -65,16 +65,16 @@ internal class JiraXmlToSql
         // need to process in DESCENDING order so that the latest updates are processed last
         foreach (string filePath in xmlFiles.OrderByDescending(f => f))
         {
-            ProcessXmlFile(filePath, connection);
+            ProcessXmlFile(filePath, db);
         }
         
         // Migrate custom field data from custom_fields table to issueRecords table
-        await UpdateIssuesFromCustomFieldsAsync(connection);
+        await UpdateIssuesFromCustomFieldsAsync(db);
         
         // we no longer need the custom fields table
         if (!_config.KeepCustomFieldSource)
         {
-            CustomFieldRecord.DropTable(connection);
+            CustomFieldRecord.DropTable(db);
         }
 
         Console.WriteLine("\nImport process finished.");
@@ -146,7 +146,7 @@ internal class JiraXmlToSql
     /// <summary>
     /// Creates the known tables.
     /// </summary>
-    /// <param name="connection">The database connection</param>
+    /// <param name="connection">The database db</param>
     private void CreateTablesAndIndexes(SqliteConnection connection)
     {
         Console.WriteLine("Initializing database...");
@@ -173,7 +173,7 @@ internal class JiraXmlToSql
     /// Processes a single XML file and loads its data into the database.
     /// </summary>
     /// <param name="filePath">The path to the XML file</param>
-    /// <param name="connection">The database connection</param>
+    /// <param name="connection">The database db</param>
     private void ProcessXmlFile(string filePath, SqliteConnection connection)
     {
         Console.WriteLine($"\nProcessing file: {filePath}");
@@ -275,7 +275,7 @@ internal class JiraXmlToSql
     /// Updates the issueRecords table by migrating specific custom field data from the custom_fields table.
     /// This matches the TypeScript implementation's updateIssuesFromCustomFields function.
     /// </summary>
-    /// <param name="connection">The database connection</param>
+    /// <param name="connection">The database db</param>
     private async Task UpdateIssuesFromCustomFieldsAsync(SqliteConnection connection)
     {
         Console.WriteLine("\nMigrating select custom fields to main issues table...");

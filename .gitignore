@@ -414,3 +414,9 @@ msbuild.wrn
 /generated/local_*
 
 *.sqlite
+
+# Ignore the dictionary sources
+/dict-src/**
+
+# Ignore zip files in the root
+/*.zip

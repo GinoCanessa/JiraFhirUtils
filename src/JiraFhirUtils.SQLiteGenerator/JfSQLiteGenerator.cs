@@ -688,6 +688,8 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
 
                             {{{string.Join(_line_2, getIndexLines())}}}
                     
+                            LoadMaxKey(dbConnection, dbTableName);
+
                             return true;
                         }
 
