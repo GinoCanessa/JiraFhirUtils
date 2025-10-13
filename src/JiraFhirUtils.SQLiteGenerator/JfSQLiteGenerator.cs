@@ -750,17 +750,22 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             return null;
                         }
                     
-                        public static {{{className}}}? SelectSingle(IDbConnection dbConnection, string? dbTableName = null, {{{string.Join(", ", getFnFilterParams(true))}}})
+                        public static {{{className}}}? SelectSingle(
+                            IDbConnection dbConnection, 
+                            string? dbTableName = null, 
+                            bool orJoinConditions = false, 
+                            {{{string.Join(", ", getFnFilterParams(true))}}})
                         {
                             dbTableName ??= "{{{tableName}}}";
 
                             IDbCommand command = dbConnection.CreateCommand();
                             command.CommandText = $"SELECT {{{string.Join(", ", tableColInfo.Select(p => p.name))}}} FROM {dbTableName}";
 
+                            string joiner = orJoinConditions ? " OR " : " AND ";
                             bool addedCondition = false;
                             {{{(anyColIsJson ? "string? dbJson;" : string.Empty)}}}
                     
-                            {{{string.Join(_line_2, getConditionLines(true))}}}
+                            {{{string.Join(_line_2, getConditionLines(true, true))}}}
 
                             using (IDataReader reader = command.ExecuteReader())
                             {
@@ -775,7 +780,15 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             return null;
                         }
 
-                        public static List<{{{className}}}> SelectList(IDbConnection dbConnection, string? dbTableName = null, string[]? orderByProperties = null, string? orderByDirection = null, {{{string.Join(", ", getFnFilterParams(true))}}})
+                        public static List<{{{className}}}> SelectList(
+                            IDbConnection dbConnection, 
+                            string? dbTableName = null, 
+                            string[]? orderByProperties = null, 
+                            string? orderByDirection = null, 
+                            bool orJoinConditions = false, 
+                            int? resultLimit = null,
+                            int? resultOffset = null,
+                            {{{string.Join(", ", getFnFilterParams(true))}}})
                         {
                             dbTableName ??= "{{{tableName}}}";
 
@@ -784,10 +797,11 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             IDbCommand command = dbConnection.CreateCommand();
                             command.CommandText = $"SELECT {{{string.Join(", ", tableColInfo.Select(p => p.name))}}} FROM {dbTableName}";
                     
+                            string joiner = orJoinConditions ? " OR " : " AND ";
                             bool addedCondition = false;
                             {{{(anyColIsJson ? "string? dbJson;" : string.Empty)}}}
                                         
-                            {{{string.Join(_line_2, getConditionLines(true))}}}
+                            {{{string.Join(_line_2, getConditionLines(true, true))}}}
 
                             if ((orderByProperties != null) && (orderByProperties.Length > 0))
                             {
@@ -801,7 +815,16 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                                     command.CommandText += $" ASC";
                                 }
                             }
-                    
+                                
+                            if (resultLimit.HasValue && (resultLimit.Value > 0))
+                            {
+                                command.CommandText += $" LIMIT {resultLimit.Value}";
+                                if (resultOffset.HasValue && (resultOffset.Value > 0))
+                                {
+                                    command.CommandText += $" OFFSET {resultOffset.Value}";
+                                }
+                            }
+                                
                             using (IDataReader reader = command.ExecuteReader())
                             {
                                 while (reader.Read())
@@ -815,7 +838,11 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             return results;
                         }
 
-                        public static Dictionary<{{{(pkColName == null ? "int" : pkPropType)}}}, {{{className}}}> SelectDict(IDbConnection dbConnection, string? dbTableName = null, {{{string.Join(", ", getFnFilterParams(true))}}})
+                        public static Dictionary<{{{(pkColName == null ? "int" : pkPropType)}}}, {{{className}}}> SelectDict(
+                            IDbConnection dbConnection, 
+                            string? dbTableName = null, 
+                            bool orJoinConditions = false,
+                            {{{string.Join(", ", getFnFilterParams(true))}}})
                         {
                             dbTableName ??= "{{{tableName}}}";
                     
@@ -824,10 +851,11 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             IDbCommand command = dbConnection.CreateCommand();
                             command.CommandText = $"SELECT {{{string.Join(", ", tableColInfo.Select(p => p.name))}}} FROM {dbTableName}";
                     
+                            string joiner = orJoinConditions ? " OR " : " AND ";
                             bool addedCondition = false;
                             {{{(anyColIsJson ? "string? dbJson;" : string.Empty)}}}
                                         
-                            {{{string.Join(_line_2, getConditionLines(true))}}}
+                            {{{string.Join(_line_2, getConditionLines(true, true))}}}
 
                             {{{(pkColName == null ? "int rowId = 0;" : string.Empty)}}}
                             using (IDataReader reader = command.ExecuteReader())
@@ -843,17 +871,22 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             return results;
                         }
 
-                        public static int SelectCount(IDbConnection dbConnection, string? dbTableName = null, {{{string.Join(", ", getFnFilterParams(true))}}})
+                        public static int SelectCount(
+                            IDbConnection dbConnection,
+                            string? dbTableName = null, 
+                            bool orJoinConditions = false,
+                            {{{string.Join(", ", getFnFilterParams(true))}}})
                         {
                             dbTableName ??= "{{{tableName}}}";
                     
                             IDbCommand command = dbConnection.CreateCommand();
                             command.CommandText = $"SELECT COUNT({{{(pkColName == null ? "*" : pkColName)}}}) FROM {dbTableName}";
                     
+                            string joiner = orJoinConditions ? " OR " : " AND ";
                             bool addedCondition = false;
                             {{{(anyColIsJson ? "string? dbJson;" : string.Empty)}}}
                                         
-                            {{{string.Join(_line_2, getConditionLines(true))}}}
+                            {{{string.Join(_line_2, getConditionLines(true, true))}}}
 
                             object? result = command.ExecuteScalar();
                             if (result is int value)
@@ -1180,9 +1213,14 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             }
                         }
 
-                        public static void Delete(IDbConnection dbConnection, string? dbTableName = null, {{{string.Join(", ", getFnFilterParams(true))}}})
+                        public static void Delete(
+                            IDbConnection dbConnection,
+                            string? dbTableName = null,
+                            bool orJoinConditions = false,
+                            {{{string.Join(", ", getFnFilterParams(true))}}})
                         {
                             dbTableName ??= "{{{tableName}}}";
+                            string joiner = orJoinConditions ? " OR " : " AND ";
                             {{{(anyColIsJson ? "string? dbJson;" : string.Empty)}}}
                                         
                             using (IDbTransaction transaction = dbConnection.BeginTransaction())
@@ -1192,7 +1230,7 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                                         
                                 bool addedCondition = false;
                     
-                                {{{string.Join(_line_2, getConditionLines(true))}}}
+                                {{{string.Join(_line_2, getConditionLines(true, true))}}}
 
                                 command.ExecuteNonQuery();
                                 transaction.Commit();
@@ -1204,22 +1242,46 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
                     public static class {{{className}}}Extensions
                     {
-                        public static {{{className}}}? SelectSingle<T>(this IDbConnection dbCon, string? dbTableName = null, {{{string.Join(", ", getFnFilterParams(true))}}})
+                        public static {{{className}}}? SelectSingle<T>(
+                            this IDbConnection dbCon, 
+                            string? dbTableName = null,
+                            bool orJoinConditions = false,
+                            {{{string.Join(", ", getFnFilterParams(true))}}})
                             where T : {{{className}}}
                         {
-                            return {{{className}}}.SelectSingle(dbCon, dbTableName, {{{string.Join(", ", getFnFilterArgs(true))}}});
+                            return {{{className}}}.SelectSingle(dbCon, dbTableName, orJoinConditions, {{{string.Join(", ", getFnFilterArgs(true))}}});
                         }
 
-                        public static List<{{{className}}}> SelectList<T>(this IDbConnection dbCon, string? dbTableName = null, string[]? orderByProperties = null, string? orderByDirection = null, {{{string.Join(", ", getFnFilterParams(true))}}})
+                        public static List<{{{className}}}> SelectList<T>(
+                            this IDbConnection dbCon,
+                            string? dbTableName = null,
+                            string[]? orderByProperties = null,
+                            string? orderByDirection = null,
+                            bool orJoinConditions = false,
+                            int? resultLimit = null,
+                            int? resultOffset = null,
+                            {{{string.Join(", ", getFnFilterParams(true))}}})
                             where T : {{{className}}}
                         {
-                            return {{{className}}}.SelectList(dbCon, dbTableName, orderByProperties, orderByDirection, {{{string.Join(", ", getFnFilterArgs(true))}}});
+                            return {{{className}}}.SelectList(
+                                dbCon,
+                                dbTableName,
+                                orderByProperties,
+                                orderByDirection,
+                                orJoinConditions,
+                                resultLimit,
+                                resultOffset,
+                                {{{string.Join(", ", getFnFilterArgs(true))}}});
                         }
 
-                        public static int SelectCount<T>(this IDbConnection dbCon, string? dbTableName = null, {{{string.Join(", ", getFnFilterParams(true))}}})
+                        public static int SelectCount<T>(
+                            this IDbConnection dbCon,
+                            string? dbTableName = null,
+                            bool orJoinConditions = false,
+                            {{{string.Join(", ", getFnFilterParams(true))}}})
                             where T : {{{className}}}
                         {
-                            return {{{className}}}.SelectCount(dbCon, dbTableName, {{{string.Join(", ", getFnFilterArgs(true))}}});
+                            return {{{className}}}.SelectCount(dbCon, dbTableName, orJoinConditions, {{{string.Join(", ", getFnFilterArgs(true))}}});
                         }
                                                             
                         public static void Insert(this IDbConnection dbCon, {{{className}}} value, string? dbTableName = null, bool ignoreDuplicates = false, bool insertPrimaryKey = false)
@@ -1257,9 +1319,13 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                             {{{className}}}.Delete(dbCon, values, dbTableName);
                         }
 
-                        public static void Delete(this IDbConnection dbCon, string? dbTableName = null, {{{string.Join(", ", getFnFilterParams(true))}}})
+                        public static void Delete(
+                            this IDbConnection dbCon,
+                            string? dbTableName = null,
+                            bool orJoinConditions = false,
+                            {{{string.Join(", ", getFnFilterParams(true))}}})
                         {
-                            {{{className}}}.Delete(dbCon, dbTableName, {{{string.Join(", ", getFnFilterArgs(true))}}});
+                            {{{className}}}.Delete(dbCon, dbTableName, orJoinConditions, {{{string.Join(", ", getFnFilterArgs(true))}}});
                         }
 
                         public static void Insert(this {{{className}}} value, IDbConnection dbCon, string? dbTableName = null, bool ignoreDuplicates = false, bool insertPrimaryKey = false)
@@ -1367,6 +1433,16 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
             {
                 yield return $"{rec.propType}? {rec.name} = null";
 
+                switch (rec.propType)
+                {
+                    case "int":
+                    case "long":
+                    case "decimal":
+                    case "double":
+                        yield return $"JfSQLiteUtils.JfNumericOperatorCodes {rec.name}Operator = JfSQLiteUtils.JfNumericOperatorCodes.Equals";
+                        break;
+                }
+                
                 if (rec.isNullable)
                 {
                     yield return $"bool {rec.name}IsNull = false";
@@ -1380,6 +1456,16 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
             {
                 yield return rec.name;
 
+                switch (rec.propType)
+                {
+                    case "int":
+                    case "long":
+                    case "decimal":
+                    case "double":
+                        yield return $"{rec.name}Operator";
+                        break;
+                }
+
                 if (rec.isNullable)
                 {
                     yield return $"{rec.name}IsNull";
@@ -1387,13 +1473,33 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
             }
         }
 
-        IEnumerable<string> getConditionLines(bool includeNullFilter)
+        IEnumerable<string> getConditionLines(bool includeNullFilter, bool allowsOrJoining)
         {
             foreach (TableColInfoRec rec in tableColInfo)
             {
                 yield return $"if ({rec.name} != null)";
                 yield return "{";
-                yield return $"    command.CommandText += (addedCondition ? \" AND \" : \" WHERE \") + \"{rec.name} = ${rec.name}\";";
+
+                string conditionComparator = "=";
+                switch (rec.propType)
+                {
+                    case "int":
+                    case "long":
+                    case "decimal":
+                    case "double":
+                        conditionComparator = $$$"""{JfSQLiteUtils.GetSqlOperator({{{rec.name}}}Operator)}""";
+                        break;
+                }
+                
+                if (allowsOrJoining)
+                {
+                    yield return $$$"""    command.CommandText += (addedCondition ? $" {joiner} " : " WHERE ") + "{{{rec.name}}} {{{conditionComparator}}} ${{{rec.name}}}";""";
+                }
+                else
+                {
+                    yield return $$$"""    command.CommandText += (addedCondition ? " AND " : " WHERE ") + "{{{rec.name}}} {{{conditionComparator}}} ${{{rec.name}}}";""";
+                }
+                
                 yield return "    addedCondition = true;";
                 yield return string.Empty;
                 yield return $"    IDbDataParameter {rec.name}Param = command.CreateParameter();";
@@ -1438,15 +1544,27 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                 yield return "}";
                 yield return string.Empty;
 
-                if (includeNullFilter && rec.isNullable)
+
+                if (!includeNullFilter || !rec.isNullable)
                 {
-                    yield return $"if ({rec.name}IsNull)";
-                    yield return "{";
-                    yield return $"    command.CommandText += (addedCondition ? \" AND \" : \" WHERE \") + \"{rec.name} IS NULL\";";
-                    yield return "    addedCondition = true;";
-                    yield return "}";
-                    yield return string.Empty;
+                    continue;
                 }
+
+                yield return $"if ({rec.name}IsNull)";
+                yield return "{";
+                
+                if (allowsOrJoining)
+                {
+                    yield return $$$"""    command.CommandText += (addedCondition ? $" {joiner} " : " WHERE ") + "{{{rec.name}}} IS NULL";""";
+                }
+                else
+                {
+                    yield return $$$"""    command.CommandText += (addedCondition ? " AND " : " WHERE ") + "{{{rec.name}}} IS NULL";""";
+                }
+                
+                yield return "    addedCondition = true;";
+                yield return "}";
+                yield return string.Empty;
             }
         }
 
@@ -1636,7 +1754,7 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
             : (className + "_fts");
 
         List<string> createColLines = [];
-        List<string> createFKLines = [];
+        List<string> createForeignKeyLines = [];
         List<TableColInfoRec> tableColInfo = [];
 
         foreach (MemberDeclarationSyntax member in members)
@@ -1862,7 +1980,7 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
         }
 
         context.AddSource(
-            $"{className}{"SQLite"}.g.cs",
+            $"{className}SQLite.g.cs",
             SourceText.From($$$""""
                     //------------------------------------------------------------------------------
                     // <auto-generated>

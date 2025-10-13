@@ -27,6 +27,27 @@ public class GeneratorJsonUtils
         {
             public static class JfSQLiteUtils
             {
+                public enum JfNumericOperatorCodes : int
+                {
+                    Equals = 0,
+                    NotEquals = 1,
+                    GreaterThan = 2,
+                    GreaterThanOrEquals = 3,
+                    LessThan = 4,
+                    LessThanOrEquals = 5,
+                }
+                
+                public static string GetSqlOperator(JfNumericOperatorCodes op) => op switch
+                {
+                    JfNumericOperatorCodes.Equals => "=",
+                    JfNumericOperatorCodes.NotEquals => "!=",
+                    JfNumericOperatorCodes.GreaterThan => ">",
+                    JfNumericOperatorCodes.GreaterThanOrEquals => ">=",
+                    JfNumericOperatorCodes.LessThan => "<",
+                    JfNumericOperatorCodes.LessThanOrEquals => "<=",
+                    _ => throw new NotSupportedException($"Unsupported operator code: {op}"),
+                };
+            
                 private static System.Text.RegularExpressions.Regex _htmlStripRegex = new("<.*?>", System.Text.RegularExpressions.RegexOptions.Compiled);
 
                 private static JsonSerializerOptions _options = new JsonSerializerOptions()

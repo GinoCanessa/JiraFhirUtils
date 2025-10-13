@@ -1,0 +1,6 @@
+@jira_fhir_mcp_HostAddress = http://localhost:5124
+
+GET {{jira_fhir_mcp_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

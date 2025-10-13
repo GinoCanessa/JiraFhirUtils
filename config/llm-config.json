@@ -1,0 +1,20 @@
+{
+  "llmConfig": {
+    "providerType": "OpenAICompatible",
+    "apiEndpoint": "http://localhost:1234/v1",
+    "model": "local-model",
+    "temperature": 0.3,
+    "maxTokens": 500,
+    "requestTimeoutSeconds": 30,
+    "maxRetries": 3,
+    "retryDelaySeconds": 2
+  },
+  "batchSize": 10,
+  "overwriteExistingSummaries": false,
+  "summaryTypesToGenerate": "All",
+  "prompts": {
+    "issuePrompt": "Summarize this JIRA issue in 2-3 sentences, focusing on the core problem and key details:\n\nTitle: {title}\nDescription: {description}",
+    "commentPrompt": "Summarize the key points from these JIRA comments in 2-3 sentences:\n\n{comments}",
+    "resolutionPrompt": "Summarize the resolution of this JIRA issue in 1-2 sentences:\n\nResolution: {resolution}\nDescription: {resolutionDescription}"
+  }
+}

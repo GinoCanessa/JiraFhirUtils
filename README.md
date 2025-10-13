@@ -155,7 +155,7 @@ This package contains a Model Context Protocol (MCP) server that provides read-o
 - Browse work queues with filtering by project, work group, resolution, status, and assignee
 - Full-text search across issues, URLs, artifacts, pages, titles, and summaries
 - Retrieve detailed issue information including custom fields and comments
-- List all project keys and work groups in the database
+- List all projects and work groups in the database
 
 ### Installation & Usage
 
