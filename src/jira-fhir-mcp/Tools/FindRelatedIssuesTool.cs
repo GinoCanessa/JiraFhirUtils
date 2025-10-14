@@ -264,7 +264,8 @@ public class FindRelatedIssuesTool : BaseJiraTool
             // 
             
             // Parse keywords string "keyword1 OR keyword2 OR keyword3"
-            List<string> keywordList = ParseKeywords(keywords);
+            //List<string> keywordList = ParseKeywords(keywords);
+            List<string> keywordList = keywordRecords.Select(r => r.Keyword).ToList();
             Dictionary<int, (double score, List<string> matchedKeywords)> issueScores = new();
 
             // Get all keyword matches with single query using IN clause
@@ -342,7 +343,8 @@ public class FindRelatedIssuesTool : BaseJiraTool
                 while (reader.Read() && results.Count < limit)
                 {
                     IssueRecord? issue = MapReaderToIssueRecord(reader);
-                    if (issue != null && issue.Key != excludeKey)
+                    if ((issue != null) && 
+                        (issue.Key != sourceIssue.Key))
                     {
                         results.Add(issue);
                     }

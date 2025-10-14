@@ -1493,11 +1493,11 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                 
                 if (allowsOrJoining)
                 {
-                    yield return $$$"""    command.CommandText += (addedCondition ? $" {joiner} " : " WHERE ") + "{{{rec.name}}} {{{conditionComparator}}} ${{{rec.name}}}";""";
+                    yield return $$$"""    command.CommandText += (addedCondition ? $" {joiner} " : " WHERE ") + $"{{{rec.name}}} {{{conditionComparator}}} ${{{rec.name}}}";""";
                 }
                 else
                 {
-                    yield return $$$"""    command.CommandText += (addedCondition ? " AND " : " WHERE ") + "{{{rec.name}}} {{{conditionComparator}}} ${{{rec.name}}}";""";
+                    yield return $$$"""    command.CommandText += (addedCondition ? " AND " : " WHERE ") + $"{{{rec.name}}} {{{conditionComparator}}} ${{{rec.name}}}";""";
                 }
                 
                 yield return "    addedCondition = true;";

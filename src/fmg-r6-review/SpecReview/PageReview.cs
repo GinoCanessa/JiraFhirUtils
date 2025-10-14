@@ -20,17 +20,36 @@ public class PageReview
 {
     private CliConfig _config;
 
-    private static readonly char[] _wordSplitChars = [' ', '\t', '\r', '\n', ':', '\\', '/', '"', ',' ];
+    private static readonly char[] _wordSplitChars = [ ' ', '\t', '\r', '\n', '"' ];
+
+    private static readonly char[] _extendedSplitChars = [
+        ' ', '\t', '\r', '\n',
+        '.',
+        ':', '\\', '/', 
+        '"', '\'', ';',
+        '+', '-', '_', '#', '*', '&', '^', '%', '@', '!',
+        ';', ',', '|', '?', '=',
+        '{', '}', '(', ')', '[', ']',
+        ];
+
+    private static readonly char[] _wgSplitChars = [ ' ', '[', ']', '%' ];
 
     private bool _haveDictDb = false;
     private FrozenSet<string> _dictionaryWords;
     private FrozenDictionary<string, string?> _typoWords;
+
+    private enum FhirSourceCodes : int
+    {
+        Ci,
+        Published,
+    }
 
     private bool _haveCiDb = false;
     private FrozenDictionary<string, string> _fhirCiStructures;
     private FrozenSet<string> _fhirCiElementPaths;
     private FrozenSet<string> _fhirCiValueSetNames;
     private FrozenSet<string> _fhirCiCodeSystemNames;
+    private FrozenSet<string> _fhirCiCodes;
     private FrozenSet<string> _fhirCiOperationNames;
     private FrozenSet<string> _fhirCiSearchParameterNames;
 
@@ -39,11 +58,12 @@ public class PageReview
     private FrozenSet<string> _fhirPublishedElementPaths;
     private FrozenSet<string> _fhirPublishedValueSetNames;
     private FrozenSet<string> _fhirPublishedCodeSystemNames;
+    private FrozenSet<string> _fhirPublishedCodes;
     private FrozenSet<string> _fhirPublishedOperationNames;
     private FrozenSet<string> _fhirPublishedSearchParameterNames;
 
     private static readonly Regex _incompleteMarkerRegex = new(
-        @"\b(to-do|todo|to\s+do|will\s+consider|...|future\s+versions)\b",
+        @"\b(to-do|todo|to\s+do|will\s+consider|\.\.\.|future\s+versions)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex _readerReviewRegex = new(
@@ -61,14 +81,55 @@ public class PageReview
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex _zulipLinkRegex = new(
-        @"http[s?]://chat.hl7.org/",
+        @"http[s?]:\/\/chat.fhir.org/",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex _confluenceLinkRegex = new(
         @"http[s?]://confluence.hl7.org/",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    private static readonly Regex _thoCodeSystemRegex = new(
+        @"(http:\/\/|https:\/\/)?terminology.hl7.org(\/CodeSystem[^\s]*|\/temporary/CodeSystem[^\s]*)",
+    RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly Regex _htmlStripRegex = new("<.*?>", RegexOptions.Compiled);
+
+    private static readonly Regex _urlRegex = new(
+        @"(http|https|ftp|sftp):\/\/[^\s\/$.?#].[^\s]*",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex _baseFhirRegex = new(
+        @"\[base\]\/[^\s]*",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex _typeFhirRegex = new(
+        @"\[type\]\/(\[type\]\/?)?[^\s]*",
+    RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex _urnRegex = new(
+        @"urn:[a-zA-Z0-9][a-zA-Z0-9-]{1,31}:[^\s]+",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex _xsdRegex = new(
+        @"xs[d]?:[a-zA-Z0-9._%+-]+(\/[a-zA-Z0-9._%+-]+)?",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex _fhirShexRegex = new(
+        @"fhir:[a-zA-Z0-9._%+-]+(\/[a-zA-Z0-9._%+-]+)?",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex _emailAddressRegex = new(
+        @"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex _dateTimeRegex = new(
+        //@"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})\b",
+        @"([0-9]([0-9]([0-9][1-9]|[1-9]0)|[1-9]00)|[1-9]000)(-(0[1-9]|1[0-2])(-(0[1-9]|[1-2][0-9]|3[0-1])(T([01][0-9]|2[0-3]):[0-5][0-9]:([0-5][0-9]|60)(\.[0-9]{1,9})?)?)?(Z|(\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00)?)?)?",
+        RegexOptions.Compiled);
+
+    private static readonly Regex _fileTargetRegex = new(
+        @"[^\s]+\.(png|jpg|jpeg|gif|svg|htm|html|diagram|xsd|json|xml|sch|zip|shex|ttl)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private IHtmlParser _htmlParser = new HtmlParser();
 
@@ -100,11 +161,13 @@ public class PageReview
     private static readonly Regex _conformantMayNotRegex = new(@"\bMAY\s+NOT\b", RegexOptions.Compiled);
     private static readonly Regex _totalMayNotRegex = new(@"\bMAY\s+NOT\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-
-
     private static readonly HashSet<string> _priorFhirVersionKeywords = new([
-        "DSTU1", "DSTU2", "STU3", "R4", "R4B", "R5",
-        "R2", "R3",
+        "dstu1", 
+        "dstu2", "r2", "hl7.fhir.r2.core", "fhirVersion=1.0",
+        "stu3", "r3", "hl7.fhir.r3.core", "fhirVersion=3.0",
+        "r4", "hl7.fhir.r4.core", "fhirVersion=4.0",
+        "r4b", "hl7.fhir.r4b.core", "fhirVersion=4.3",
+        "r5", "hl7.fhir.r5.core", "hl7.fhir.r5.corexml", "hl7.fhir.r5.examples", "hl7.fhir.r5.expansions", "hl7.fhir.r5.search", "fhirVersion=5.0",
         ], StringComparer.OrdinalIgnoreCase);
 
     private string _fhirRepoPath;
@@ -153,6 +216,7 @@ public class PageReview
             _fhirCiElementPaths = loadFhirElementPaths(ciDb);
             _fhirCiValueSetNames = loadFhirValueSetNames(ciDb);
             _fhirCiCodeSystemNames = loadFhirCodeSystemNames(ciDb);
+            _fhirCiCodes = loadFhirCodes(ciDb);
             _fhirCiOperationNames = loadFhirOperationNames(ciDb);
             _fhirCiSearchParameterNames = loadFhirSearchParameterNames(ciDb);
 
@@ -164,6 +228,7 @@ public class PageReview
             _fhirCiElementPaths = Array.Empty<string>().ToFrozenSet();
             _fhirCiValueSetNames = Array.Empty<string>().ToFrozenSet();
             _fhirCiCodeSystemNames = Array.Empty<string>().ToFrozenSet();
+            _fhirCiCodes = Array.Empty<string>().ToFrozenSet();
             _fhirCiOperationNames = Array.Empty<string>().ToFrozenSet();
             _fhirCiSearchParameterNames = Array.Empty<string>().ToFrozenSet();
         }
@@ -177,6 +242,7 @@ public class PageReview
             _fhirPublishedElementPaths = loadFhirElementPaths(fhirDb);
             _fhirPublishedValueSetNames = loadFhirValueSetNames(fhirDb);
             _fhirPublishedCodeSystemNames = loadFhirCodeSystemNames(fhirDb);
+            _fhirPublishedCodes = loadFhirCodes(fhirDb);
             _fhirPublishedOperationNames = loadFhirOperationNames(fhirDb);
             _fhirPublishedSearchParameterNames = loadFhirSearchParameterNames(fhirDb);
 
@@ -188,6 +254,7 @@ public class PageReview
             _fhirPublishedElementPaths = Array.Empty<string>().ToFrozenSet();
             _fhirPublishedValueSetNames = Array.Empty<string>().ToFrozenSet();
             _fhirPublishedCodeSystemNames = Array.Empty<string>().ToFrozenSet();
+            _fhirPublishedCodes = Array.Empty<string>().ToFrozenSet();
             _fhirPublishedOperationNames = Array.Empty<string>().ToFrozenSet();
             _fhirPublishedSearchParameterNames = Array.Empty<string>().ToFrozenSet();
         }
@@ -203,7 +270,7 @@ public class PageReview
         using IDataReader reader = command.ExecuteReader();
         while (reader.Read())
         {
-            string name = reader.GetString(0);
+            (string name, _, _) = sanitizeAsKeyword(reader.GetString(0));
             names.Add(name);
         }
         return names.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -219,7 +286,7 @@ public class PageReview
         using IDataReader reader = command.ExecuteReader();
         while (reader.Read())
         {
-            string name = reader.GetString(0);
+            (string name, _, _) = sanitizeAsKeyword(reader.GetString(0));
             names.Add(name);
         }
         return names.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -235,7 +302,7 @@ public class PageReview
         using IDataReader reader = command.ExecuteReader();
         while (reader.Read())
         {
-            string name = reader.GetString(0);
+            (string name, _, _) = sanitizeAsKeyword(reader.GetString(0));
             names.Add(name);
         }
         return names.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -251,9 +318,42 @@ public class PageReview
         using IDataReader reader = command.ExecuteReader();
         while (reader.Read())
         {
-            string name = reader.GetString(0);
+            (string name, _, _) = sanitizeAsKeyword(reader.GetString(0));
             names.Add(name);
         }
+        return names.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private FrozenSet<string> loadFhirCodes(IDbConnection db)
+    {
+        HashSet<string> names = new(StringComparer.Ordinal);
+
+        IDbCommand command = db.CreateCommand();
+        command.CommandText = $"SELECT DISTINCT {nameof(CgDbCodeSystemConcept.Code)}" +
+            $" FROM {CgDbCodeSystemConcept.DefaultTableName}" +
+            $" WHERE {nameof(CgDbCodeSystemConcept.Code)} IS NOT NULL;";
+        using (IDataReader reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                (string name, _, _) = sanitizeAsKeyword(reader.GetString(0));
+                names.Add(name);
+            }
+        }
+
+        command = db.CreateCommand();
+        command.CommandText = $"SELECT DISTINCT {nameof(CgDbValueSetConcept.Code)}" +
+            $" FROM {CgDbValueSetConcept.DefaultTableName}" +
+            $" WHERE {nameof(CgDbValueSetConcept.Code)} IS NOT NULL;";
+        using (IDataReader reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                (string name, _, _) = sanitizeAsKeyword(reader.GetString(0));
+                names.Add(name);
+            }
+        }
+
         return names.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
@@ -267,7 +367,7 @@ public class PageReview
         using IDataReader reader = command.ExecuteReader();
         while (reader.Read())
         {
-            string path = reader.GetString(0);
+            (string path, _, _) = sanitizeAsKeyword(reader.GetString(0));
             paths.Add(path);
         }
         return paths.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -283,7 +383,7 @@ public class PageReview
         using IDataReader reader = command.ExecuteReader();
         while (reader.Read())
         {
-            string name = reader.GetString(0);
+            (string name, _, _) = sanitizeAsKeyword(reader.GetString(0));
             string artifactClass = reader.GetString(1);
             structures[name] = artifactClass;
         }
@@ -300,12 +400,12 @@ public class PageReview
         using IDataReader reader = command.ExecuteReader();
         while (reader.Read())
         {
-            (string typo, bool hasAlpha) = sanitizeAsKeyword(reader.GetString(0));
-            if (string.IsNullOrEmpty(typo))
+            // note that we cannot sanitize here, as that fixes many typos
+            string typo = reader.GetString(0).Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(typo))
             {
                 continue;
             }
-
             string? suggestion = reader.GetString(1);
             typos[typo] = suggestion;
         }
@@ -322,11 +422,13 @@ public class PageReview
         using IDataReader reader = command.ExecuteReader();
         while (reader.Read())
         {
-            (string word, bool hasAlpha) = sanitizeAsKeyword(reader.GetString(0));
-            if (hasAlpha)
+            (string word, char firstLetter, _) = sanitizeAsKeyword(reader.GetString(0));
+            if (firstLetter == '\0')
             {
-                words.Add(word);
+                continue;
             }
+
+            words.Add(word);
         }
 
         return words.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -412,7 +514,14 @@ public class PageReview
                 }
             }
 
-            string visibleText = extractVisibleText(doc);
+            //string visibleText = extractVisibleText(doc);
+            string visibleText = stripHtml(doc.Body?.TextContent ?? string.Empty);
+
+            int footerLoc = visibleText.IndexOf("[%file newfooter%]", StringComparison.Ordinal);
+            if (footerLoc != -1)
+            {
+                visibleText = visibleText[0..footerLoc];
+            }
 
             bool isStandardPage = true;
 
@@ -447,136 +556,13 @@ public class PageReview
                                                (modified.NonConformantMayCount ?? 0) +
                                                (modified.NonConformantMayNotCount ?? 0);
 
-            // process the visible text into words
-            string[] words = visibleText
-                .Split(_wordSplitChars, StringSplitOptions.RemoveEmptyEntries)
-                .Select(w => w.Trim())
-                .Where(w => !string.IsNullOrEmpty(w))
-                .ToArray();
-
             int priorFhirVersionCount = 0;
             int deprecatedLiteralCount = 0;
 
-            foreach (string rawWord in words)
+            // do word-processing on pages other than the credits page
+            if (page.PageFileName != "credits.html")
             {
-                string word = rawWord.Trim();
-
-                if (word.StartsWith("[%", StringComparison.Ordinal) || 
-                    word.EndsWith("%]", StringComparison.Ordinal))
-                {
-                    // skip special markup words
-                    continue;
-                }
-
-                (string sanitized, bool hasAlpha) = sanitizeAsKeyword(word);
-
-                bool inCi = false;
-                string? ciArtifactClass = null;
-
-                bool inPublished = false;
-                string? publishedArtifactClass = null;
-
-                // check if this word is a FHIR artifact in the current ci
-                if (_haveCiDb)
-                {
-                    (inCi, ciArtifactClass) = checkFhirCi(word, sanitized);
-                }
-
-                // check if this word is a FHIR artifact in the published spec
-                if (_havePublishedDb)
-                {
-                    (inPublished, publishedArtifactClass) = checkFhirPublished(word, sanitized);
-                }
-
-                // check if this is a 'FHIR' term that has been removed
-                if (inPublished && !inCi)
-                {
-                    // check to see if we have an existing record for this word
-                    SpecPageRemovedFhirArtifactRecord? removedWord = SpecPageRemovedFhirArtifactRecord.SelectSingle(
-                        _db,
-                        PageId: page.PageId,
-                        Word: word);
-
-                    if (removedWord is null)
-                    {
-                        // new record
-                        removedWord = new SpecPageRemovedFhirArtifactRecord
-                        {
-                            Id = SpecPageRemovedFhirArtifactRecord.GetIndex(),
-                            PageId = page.PageId,
-                            Word = word,
-                            ArtifactClass = publishedArtifactClass ?? "Unknown",
-                        };
-
-                        removedWord.Insert(_db, ignoreDuplicates: false, insertPrimaryKey: true);
-                    }
-                }
-
-                // check if this is an unknown word
-                if (!inCi &&
-                    !inPublished &&
-                    _haveDictDb)
-                {
-                    // check typo list first
-                    if (_typoWords.ContainsKey(sanitized))
-                    {
-                        // check to see if we have an existing record for this word
-                        SpecPageUnknownWordRecord? typoRecord = SpecPageUnknownWordRecord.SelectSingle(
-                            _db,
-                            PageId: page.PageId,
-                            Word: word);
-
-                        if (typoRecord is null)
-                        {
-                            // new record
-                            typoRecord = new SpecPageUnknownWordRecord
-                            {
-                                Id = SpecPageUnknownWordRecord.GetIndex(),
-                                PageId = page.PageId,
-                                Word = word,
-                                IsTypo = true,
-                            };
-                            typoRecord.Insert(_db, ignoreDuplicates: false, insertPrimaryKey: true);
-                        }
-                    }
-                    // check word list next
-                    else if (_dictionaryWords.Contains(sanitized))
-                    {
-                        // known word, nothing to do
-                    }
-                    else if (hasAlpha)
-                    {
-                        // check to see if we have an existing record for this word
-                        SpecPageUnknownWordRecord? unknownWord = SpecPageUnknownWordRecord.SelectSingle(
-                            _db,
-                            PageId: page.PageId,
-                            Word: word);
-                        if (unknownWord is null)
-                        {
-                            // new record
-                            unknownWord = new SpecPageUnknownWordRecord
-                            {
-                                Id = SpecPageUnknownWordRecord.GetIndex(),
-                                PageId = page.PageId,
-                                Word = word,
-                                IsTypo = false,
-                            };
-                            unknownWord.Insert(_db, ignoreDuplicates: false, insertPrimaryKey: true);
-                        }
-                    }
-                }
-
-                // check to see if this word is a prior FHIR version keyword
-                if (_priorFhirVersionKeywords.Contains(sanitized, StringComparer.OrdinalIgnoreCase))
-                {
-                    priorFhirVersionCount++;
-                }
-
-                // check to see if this is the word 'deprecated'
-                if (string.Equals(sanitized, "deprecated", StringComparison.Ordinal))
-                {
-                    deprecatedLiteralCount++;
-                }
+                processWords(page, visibleText, ref priorFhirVersionCount, ref deprecatedLiteralCount);
             }
 
             // update word-based totals
@@ -620,6 +606,348 @@ public class PageReview
         {
             Console.WriteLine($"Error processing page {page.PageFileName}: {ex.Message}");
         }
+    }
+
+    private void processWords(
+        SpecPageRecord page, 
+        string visibleText, 
+        ref int priorFhirVersionCount, 
+        ref int deprecatedLiteralCount)
+    {
+        string? lastArtifactName = null;
+
+        // process the visible text into words
+        string[] words = visibleText.Split(_wordSplitChars, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach ((string word, int wordIndex) in words.Select((w, i) => (w, i)))
+        {
+            // skip URLs, email addresses, etc.
+            if (_urlRegex.IsMatch(word) ||
+                _baseFhirRegex.IsMatch(word) ||
+                _typeFhirRegex.IsMatch(word) ||
+                _emailAddressRegex.IsMatch(word) ||
+                _urnRegex.IsMatch(word) ||
+                _xsdRegex.IsMatch(word) ||
+                _fhirShexRegex.IsMatch(word) ||
+                _thoCodeSystemRegex.IsMatch(word) ||
+                _fileTargetRegex.IsMatch(word) ||
+                _dateTimeRegex.IsMatch(word))
+            {
+                continue;
+            }
+
+            if (word.StartsWith("[%", StringComparison.Ordinal) ||
+                word.EndsWith("%]", StringComparison.Ordinal))
+            {
+                // skip special markup words
+                continue;
+            }
+
+            (string sanitized, char firstLetter, char? prefixSymbol) = sanitizeAsKeyword(word);
+
+            // words that start with a '%' symbol are FHIRPath variables in this context, and there is no list of them
+            // words that start with a '#' symbol are fragments or codes, neither of which we are interested in
+            if ((prefixSymbol == '%') ||
+                (prefixSymbol == '#'))
+            {
+                continue;
+            }
+
+            // check for relative url paths
+            if ((prefixSymbol == '/') && word.StartsWith('/'))
+            {
+                continue;
+            }
+
+            // skip words that do not have letters in them (e.g., numbers)
+            if (firstLetter == '\0')
+            {
+                continue;
+            }
+
+            (bool wordHasDisposition, string? wordArtifactName) = processWord(
+                page,
+                ref priorFhirVersionCount,
+                ref deprecatedLiteralCount,
+                word,
+                sanitized,
+                firstLetter,
+                prefixSymbol,
+                lastArtifactName);
+
+            if (wordHasDisposition)
+            {
+                lastArtifactName = wordArtifactName ?? lastArtifactName;
+                continue;
+            }
+
+            // split the word on extended characters so we can process each component individually now
+            string[] subWords = word.Split(
+                _extendedSplitChars,
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (string subWord in subWords)
+            {
+                (string subSanitized, char subFirstLetter, char? subPrefixSymbol) = sanitizeAsKeyword(subWord);
+
+                // skip words that do not have letters in them (e.g., numbers)
+                if (subFirstLetter == '\0')
+                {
+                    continue;
+                }
+
+                (wordHasDisposition, wordArtifactName) = processWord(
+                    page,
+                    ref priorFhirVersionCount,
+                    ref deprecatedLiteralCount,
+                    subWord,
+                    subSanitized,
+                    subFirstLetter,
+                    subPrefixSymbol,
+                    lastArtifactName);
+
+                if (wordHasDisposition)
+                {
+                    lastArtifactName = wordArtifactName ?? lastArtifactName;
+                    continue;
+                }
+
+                // check to see if we have an existing record for this word
+                SpecPageUnknownWordRecord? unknownWord = SpecPageUnknownWordRecord.SelectSingle(
+                    _db!,
+                    PageId: page.PageId,
+                    Word: word);
+                if (unknownWord is null)
+                {
+                    // new record
+                    unknownWord = new SpecPageUnknownWordRecord
+                    {
+                        Id = SpecPageUnknownWordRecord.GetIndex(),
+                        PageId = page.PageId,
+                        Word = word,
+                        IsTypo = false,
+                    };
+                    unknownWord.Insert(_db!, ignoreDuplicates: false, insertPrimaryKey: true);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Process a word
+    /// </summary>
+    /// <param name="page"></param>
+    /// <param name="priorFhirVersionCount"></param>
+    /// <param name="deprecatedLiteralCount"></param>
+    /// <param name="word"></param>
+    /// <param name="sanitized"></param>
+    /// <param name="firstLetter"></param>
+    /// <param name="prefixSymbol"></param>
+    /// <returns>true if the word has been positively identified, false otherwise</returns>
+    private (bool hasDisposition, string? resourceName) processWord(
+        SpecPageRecord page, 
+        ref int priorFhirVersionCount, 
+        ref int deprecatedLiteralCount, 
+        string word, 
+        string sanitized, 
+        char firstLetter, 
+        char? prefixSymbol,
+        string? lastArtifactName)
+    {
+        // check to see if this word is a prior FHIR version keyword
+        if (_priorFhirVersionKeywords.Contains(sanitized))
+        {
+            priorFhirVersionCount++;
+            return (true, null);
+        }
+
+        // check to see if this is the word 'deprecated'
+        if (string.Equals(sanitized, "deprecated", StringComparison.Ordinal))
+        {
+            deprecatedLiteralCount++;
+            return (true, null);
+        }
+
+        bool inCi = false;
+        string? ciArtifactClass = null;
+        string? ciArtifactName = null;
+
+        bool inPublished = false;
+        string? publishedArtifactClass = null;
+        string? publishedArtifactName = null;
+
+        string? lastArtifactWord = (lastArtifactName is not null) && (prefixSymbol == '.')
+            ? lastArtifactName + word
+            : null;
+
+        (string? lastArtifactSanitized, _, _) = lastArtifactWord is null
+            ? (null, '\0', null)
+            : sanitizeAsKeyword(lastArtifactWord);
+
+        // check if this word is a FHIR artifact in the current ci
+        if (_haveCiDb)
+        {
+            (inCi, ciArtifactClass, ciArtifactName) = testWordAgainstFhir(
+                word,
+                sanitized, 
+                firstLetter, 
+                prefixSymbol, 
+                FhirSourceCodes.Ci);
+
+            if (inCi)
+            {
+                return (true, ciArtifactName);
+            }
+
+            // check for this being a relative path to a known artifact
+            if ((lastArtifactWord is not null) && (lastArtifactSanitized is not null))
+            {
+                (inCi, ciArtifactClass, ciArtifactName) = testWordAgainstFhir(
+                    lastArtifactWord,
+                    lastArtifactSanitized,
+                    firstLetter,
+                    null,
+                    FhirSourceCodes.Ci);
+                if (inCi)
+                {
+                    return (true, ciArtifactName);
+                }
+            }
+
+            // try non-plural version of the word if it ends with 's'
+            if (sanitized.EndsWith("s", StringComparison.OrdinalIgnoreCase))
+            {
+                (inCi, ciArtifactClass, ciArtifactName) = testWordAgainstFhir(
+                    word[..^1],
+                    sanitized[..^1],
+                    firstLetter,
+                    prefixSymbol,
+                    FhirSourceCodes.Ci);
+                if (inCi)
+                {
+                    return (true, ciArtifactName);
+                }
+            }
+        }
+
+        // check if this word is a FHIR artifact in the published spec
+        if (_havePublishedDb)
+        {
+            (inPublished, publishedArtifactClass, publishedArtifactName) = testWordAgainstFhir(
+                word,
+                sanitized, 
+                firstLetter, 
+                prefixSymbol, 
+                FhirSourceCodes.Published);
+
+            if (inPublished)
+            {
+                lastArtifactName = publishedArtifactName;
+            }
+            // check for this being a relative path to a known artifact
+            else if (lastArtifactWord is not null && lastArtifactSanitized is not null)
+            {
+                (inPublished, publishedArtifactClass, publishedArtifactName) = testWordAgainstFhir(
+                    lastArtifactWord,
+                    lastArtifactSanitized,
+                    firstLetter,
+                    null,
+                    FhirSourceCodes.Published);
+
+                if (inPublished)
+                {
+                    lastArtifactName = publishedArtifactName;
+                }
+            }
+
+            // try non-plural version of the word if it ends with 's'
+            if (!inPublished && sanitized.EndsWith("s", StringComparison.OrdinalIgnoreCase))
+            {
+                (inPublished, publishedArtifactClass, publishedArtifactName) = testWordAgainstFhir(
+                    word[..^1],
+                    sanitized[..^1],
+                    firstLetter,
+                    prefixSymbol,
+                    FhirSourceCodes.Published);
+                if (inPublished)
+                {
+                    lastArtifactName = publishedArtifactName;
+                }
+            }
+        }
+
+        // check if this is a 'FHIR' term that has been removed
+        if (inPublished && !inCi)
+        {
+            // before adding as a 'removed' word, check to see if it is in the dictionary (e.g., Conformance)
+            if (_dictionaryWords.Contains(sanitized))
+            {
+                // known good word, nothing to do
+                return (true, null);
+            }
+
+            // check to see if we have an existing record for this word
+            SpecPageRemovedFhirArtifactRecord? removedWord = SpecPageRemovedFhirArtifactRecord.SelectSingle(
+                _db!,
+                PageId: page.PageId,
+                Word: word);
+
+            if (removedWord is null)
+            {
+                // new record
+                removedWord = new SpecPageRemovedFhirArtifactRecord
+                {
+                    Id = SpecPageRemovedFhirArtifactRecord.GetIndex(),
+                    PageId = page.PageId,
+                    Word = word,
+                    ArtifactClass = publishedArtifactClass ?? "Unknown",
+                };
+
+                removedWord.Insert(_db!, ignoreDuplicates: false, insertPrimaryKey: true);
+            }
+
+            return (true, publishedArtifactName);
+        }
+
+        // check if this is an unknown word
+        if (!inCi &&
+            !inPublished &&
+            _haveDictDb)
+        {
+            // check typo list first
+            if (_typoWords.ContainsKey(word) ||
+                _typoWords.ContainsKey(sanitized))
+            {
+                // check to see if we have an existing record for this word
+                SpecPageUnknownWordRecord? typoRecord = SpecPageUnknownWordRecord.SelectSingle(
+                    _db!,
+                    PageId: page.PageId,
+                    Word: word);
+
+                if (typoRecord is null)
+                {
+                    // new record
+                    typoRecord = new SpecPageUnknownWordRecord
+                    {
+                        Id = SpecPageUnknownWordRecord.GetIndex(),
+                        PageId = page.PageId,
+                        Word = word,
+                        IsTypo = true,
+                    };
+                    typoRecord.Insert(_db!, ignoreDuplicates: false, insertPrimaryKey: true);
+                }
+
+                return (true, null);
+            }
+
+            // check word list next
+            if (_dictionaryWords.Contains(sanitized))
+            {
+                // known good word, nothing to do
+                return (true, null);
+            }
+        }
+
+        return (false, null);
     }
 
     private int checkPageImages(IDocument doc, int pageId)
@@ -698,172 +1026,110 @@ public class PageReview
         return imagesWithIssuesCount;
     }
 
-    private (bool found, string? artifactClass) checkFhirCi(string word, string sanitized)
+    private (bool found, string? artifactClass, string? artifactName) testWordAgainstFhir(
+        string word,
+        string sanitized, 
+        char firstLetter, 
+        char? prefixSymbol,
+        FhirSourceCodes comparisonSource)
     {
-        string trimmedWord = word.Trim();
-        if (string.IsNullOrEmpty(trimmedWord))
+        if (firstLetter == '\0')
         {
-            return (false, null);
+            return (false, null, null);
         }
 
-        // check if this is supposed to be an operation
-        if (trimmedWord.StartsWith('$'))
+        FrozenDictionary<string, string> structures;
+        FrozenSet<string> elementPaths;
+        FrozenSet<string> valueSetNames;
+        FrozenSet<string> codeSystemNames;
+        FrozenSet<string> codes;
+        FrozenSet<string> operationNames;
+        FrozenSet<string> searchParameterNames;
+
+        switch (comparisonSource)
         {
-            trimmedWord = trimmedWord[1..];
-            if (_fhirCiOperationNames.Contains(trimmedWord))
-            {
-                return (true, "Operation");
-            }
+            case FhirSourceCodes.Ci:
+                structures = _fhirCiStructures;
+                elementPaths = _fhirCiElementPaths;
+                valueSetNames = _fhirCiValueSetNames;
+                codeSystemNames = _fhirCiCodeSystemNames;
+                codes = _fhirCiCodes;
+                operationNames = _fhirCiOperationNames;
+                searchParameterNames = _fhirCiSearchParameterNames;
+                break;
 
-            if (_fhirCiOperationNames.Contains(sanitized))
-            {
-                return (true, "Operation");
-            }
+            case FhirSourceCodes.Published:
+                structures = _fhirPublishedStructures;
+                elementPaths = _fhirPublishedElementPaths;
+                valueSetNames = _fhirPublishedValueSetNames;
+                codeSystemNames = _fhirPublishedCodeSystemNames;
+                codes = _fhirPublishedCodes;
+                operationNames = _fhirPublishedOperationNames;
+                searchParameterNames = _fhirPublishedSearchParameterNames;
+                break;
 
-            return (false, null);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(comparisonSource), comparisonSource, null);
         }
+
+        //// check if this is supposed to be an operation
+        //if (prefixSymbol == '$')
+        //{
+        //    if (_fhirCiOperationNames.Contains(sanitized))
+        //    {
+        //        return (true, "Operation");
+        //    }
+
+        //    // fail anything else that starts with '$' - there are no valid published artifacts that start with '$' other than operations
+        //    return (false, null);
+        //}
 
         // check if there is a structure definition for this 'word'
-        if (_fhirCiStructures.TryGetValue(trimmedWord, out string? artifactClass))
+        if (structures.TryGetValue(sanitized, out string? artifactClass))
         {
-            return (true, artifactClass);
+            return (true, artifactClass, word.Split('.', StringSplitOptions.RemoveEmptyEntries)[0].Trim());
         }
 
-        if (_fhirCiStructures.TryGetValue(sanitized, out artifactClass))
+        if (sanitized.StartsWith("value", StringComparison.Ordinal) &&
+            structures.TryGetValue(sanitized[5..], out artifactClass))
         {
-            return (true, artifactClass);
+            return (true, artifactClass, null);
         }
 
         // check if there is an element for this 'word'
-        if (_fhirCiElementPaths.Contains(trimmedWord))
+        if (elementPaths.Contains(sanitized))
         {
-            return (true, "Element");
+            return (true, "Element", word.Split('.', StringSplitOptions.RemoveEmptyEntries)[0].Trim());
         }
 
-        if (_fhirCiElementPaths.Contains(sanitized))
+        //// check if there is a code for this 'word' - restict to # prefix because almost all words are codes otherwise
+        //if ((prefixSymbol == '#') &&
+        //    codes.Contains(sanitized))
+        //{
+        //    return (true, "Code");
+        //}
+
+        //// check if there is a value set for this 'word'
+        //if (valueSetNames.Contains(sanitized))
+        //{
+        //    return (true, "ValueSet");
+        //}
+
+        //// check if there is a code system for this 'word'
+        //if (codeSystemNames.Contains(sanitized))
+        //{
+        //    return (true, "CodeSystem");
+        //}
+
+        // check if there is a search parameter for this 'word' - restrict to _ prefixes because too many words are search parameters otherwise
+        if ((prefixSymbol == '_') &&
+            searchParameterNames.Contains(sanitized))
         {
-            return (true, "Element");
+            return (true, "SearchParameter", null);
         }
 
-        // check if there is a value set for this 'word'
-        if (_fhirCiValueSetNames.Contains(trimmedWord))
-        {
-            return (true, "ValueSet");
-        }
-
-        if (_fhirCiValueSetNames.Contains(sanitized))
-        {
-            return (true, "ValueSet");
-        }
-
-        // check if there is a code system for this 'word'
-        if (_fhirCiCodeSystemNames.Contains(trimmedWord))
-        {
-            return (true, "CodeSystem");
-        }
-
-        if (_fhirCiCodeSystemNames.Contains(sanitized))
-        {
-            return (true, "CodeSystem");
-        }
-
-        // check if there is a search parameter for this 'word'
-        if (_fhirCiSearchParameterNames.Contains(trimmedWord))
-        {
-            return (true, "SearchParameter");
-        }
-
-        if (_fhirCiSearchParameterNames.Contains(sanitized))
-        {
-            return (true, "SearchParameter");
-        }
-
-        return (false, null);
+        return (false, null, null);
     }
-
-    private (bool found, string? artifactClass) checkFhirPublished(string word, string sanitized)
-    {
-        string trimmedWord = word.Trim();
-        if (string.IsNullOrEmpty(trimmedWord))
-        {
-            return (false, null);
-        }
-
-        // check if this is supposed to be an operation
-        if (trimmedWord.StartsWith('$'))
-        {
-            trimmedWord = trimmedWord[1..];
-            if (_fhirPublishedOperationNames.Contains(trimmedWord))
-            {
-                return (true, "Operation");
-            }
-
-            if (_fhirPublishedOperationNames.Contains(sanitized))
-            {
-                return (true, "Operation");
-            }
-
-            return (false, null);
-        }
-
-        // check if there is a structure definition for this 'word'
-        if (_fhirPublishedStructures.TryGetValue(trimmedWord, out string? artifactClass))
-        {
-            return (true, artifactClass);
-        }
-
-        if (_fhirPublishedStructures.TryGetValue(sanitized, out artifactClass))
-        {
-            return (true, artifactClass);
-        }
-
-        // check if there is an element for this 'word'
-        if (_fhirPublishedElementPaths.Contains(trimmedWord))
-        {
-            return (true, "Element");
-        }
-
-        if (_fhirPublishedElementPaths.Contains(sanitized))
-        {
-            return (true, "Element");
-        }
-
-        // check if there is a value set for this 'word'
-        if (_fhirPublishedValueSetNames.Contains(trimmedWord))
-        {
-            return (true, "ValueSet");
-        }
-
-        if (_fhirPublishedValueSetNames.Contains(sanitized))
-        {
-            return (true, "ValueSet");
-        }
-
-        // check if there is a code system for this 'word'
-        if (_fhirPublishedCodeSystemNames.Contains(trimmedWord))
-        {
-            return (true, "CodeSystem");
-        }
-
-        if (_fhirPublishedCodeSystemNames.Contains(sanitized))
-        {
-            return (true, "CodeSystem");
-        }
-
-        // check if there is a search parameter for this 'word'
-        if (_fhirPublishedSearchParameterNames.Contains(trimmedWord))
-        {
-            return (true, "SearchParameter");
-        }
-
-        if (_fhirPublishedSearchParameterNames.Contains(sanitized))
-        {
-            return (true, "SearchParameter");
-        }
-
-        return (false, null);
-    }
-
 
     private (int conformant, int nonConformant) getConformanceCounts(string text, ConformanceKeywordCodes keywordCode)
     {
@@ -1006,13 +1272,16 @@ public class PageReview
                 return null;
             }
 
-            // format of text is `[%wg vocab%]`
-            string[] parts = content.Split(new[] { ' ' }, 2);
-            if ((parts.Length == 2) && 
-                parts[0].StartsWith("[%wg ", StringComparison.Ordinal) && 
-                parts[0].EndsWith("%]", StringComparison.Ordinal))
+            // format of text is `Work Group[%wg vocab%]`
+            string[] parts = content.Split(_wgSplitChars, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            int wgLiteralIndex = Array.FindIndex(
+                parts, 
+                p => p.Equals("wg", StringComparison.OrdinalIgnoreCase) || p.Equals("wgt", StringComparison.OrdinalIgnoreCase));
+
+            if ((wgLiteralIndex != -1) &&
+                (parts.Length > wgLiteralIndex + 1))
             {
-                return parts[1];
+                return parts[wgLiteralIndex + 1];
             }
         }
         return null;
@@ -1201,14 +1470,15 @@ public class PageReview
         return _htmlStripRegex.Replace(text, string.Empty);
     }
 
-    private static (string clean, bool hasAlpha) sanitizeAsKeyword(string? text)
+    private static (string clean, char firstLetter, char? prefixSymbol) sanitizeAsKeyword(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            return (string.Empty, false);
+            return (string.Empty, '\0', null);
         }
 
-        bool hasAlpha = false;
+        char? firstLetter = null;
+        char? prefixSymbol = null;
 
         StringBuilder sb = new StringBuilder(text.Length);
         foreach (char c in text)
@@ -1220,11 +1490,11 @@ public class PageReview
                 case UnicodeCategory.UppercaseLetter:
                 case UnicodeCategory.TitlecaseLetter:
                     sb.Append(char.ToLower(c));
-                    hasAlpha = true;
+                    firstLetter ??= c;
                     break;
 
                 case UnicodeCategory.LowercaseLetter:
-                    hasAlpha = true;
+                    firstLetter ??= c;
                     sb.Append(c);
                     break;
 
@@ -1246,23 +1516,29 @@ public class PageReview
                 //case UnicodeCategory.Format:
                 //case UnicodeCategory.Surrogate:
                 //case UnicodeCategory.PrivateUse:
-                //case UnicodeCategory.ConnectorPunctuation:
-                //case UnicodeCategory.DashPunctuation:
-                //case UnicodeCategory.OpenPunctuation:
-                //case UnicodeCategory.ClosePunctuation:
-                //case UnicodeCategory.InitialQuotePunctuation:
-                //case UnicodeCategory.FinalQuotePunctuation:
-                //case UnicodeCategory.OtherPunctuation:
-                //case UnicodeCategory.MathSymbol:
-                //case UnicodeCategory.CurrencySymbol:
+                case UnicodeCategory.ConnectorPunctuation:
+                case UnicodeCategory.DashPunctuation:
+                case UnicodeCategory.OpenPunctuation:
+                case UnicodeCategory.ClosePunctuation:
+                case UnicodeCategory.InitialQuotePunctuation:
+                case UnicodeCategory.FinalQuotePunctuation:
+                case UnicodeCategory.OtherPunctuation:
+                case UnicodeCategory.MathSymbol:
+                case UnicodeCategory.CurrencySymbol:
                 //case UnicodeCategory.ModifierSymbol:
-                //case UnicodeCategory.OtherSymbol:
-                //case UnicodeCategory.OtherNotAssigned:
+                case UnicodeCategory.OtherSymbol:
+                    //case UnicodeCategory.OtherNotAssigned:
+                    if (firstLetter == null)
+                    {
+                        prefixSymbol ??= c;
+                    }
+
+                    break;
                 default:
                     break;
             }
         }
-        return (sb.ToString(), hasAlpha);
+        return (sb.ToString(), firstLetter ?? '\0', prefixSymbol);
     }
 
 }
