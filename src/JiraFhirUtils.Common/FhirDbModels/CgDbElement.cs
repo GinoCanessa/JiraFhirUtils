@@ -57,6 +57,11 @@ public partial class CgDbElement : CgDbPackageContentBase
     public required bool IsModifier { get; set; }
     public required string? IsModifierReason { get; set; }
 
+    public required string? StandardStatus { get; set; }
+
+    public required string? FixedValue { get; set; }
+    public required string? PatternValue { get; set; }
+    public required string? MeaningWhenMissing { get; set; }
 
     [JfSQLiteIgnore]
     public string UiDisplay
@@ -142,5 +147,9 @@ public partial class CgDbElement : CgDbPackageContentBase
         IsSimpleType = false,
         IsModifier = false,
         IsModifierReason = null,
+        StandardStatus = null,
+        FixedValue = null,
+        PatternValue = null,
+        MeaningWhenMissing = null,
     };
 }

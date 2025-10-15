@@ -1,4 +1,5 @@
 ﻿using JiraFhirUtils.Common;
+using JiraFhirUtils.Common.FhirDbModels;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -6,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace fmg_r6_review.Generate;
 
@@ -19,6 +21,21 @@ public class ConfluenceGenerator
     private IDbConnection _ciDb = null!;
     private HttpClient? _httpClient = null;
     private int? _wgNotSpecifiedPageId = null;
+
+    internal static readonly HashSet<string> _otherCodes = [
+        "OTHER",
+        "Other",
+        "other",
+        "OTH",      // v3 Null Flavor of other
+        ];
+
+    internal static readonly HashSet<string> _unknownCodes = [
+        "UNKNOWN",
+        "Unknown",
+        "unknown",
+        "UNK",      // v3 Null Flavor of Unknown
+        //"NI",       // v3 Null Flavor of No Information
+        ];
 
     public ConfluenceGenerator(CliConfig config)
     {
@@ -94,12 +111,229 @@ public class ConfluenceGenerator
         generatePageContent();
 
         // process artifacts
+        generateArtifactContent();
 
         // clean up
         _db.Close();
         _db = null!;
         _ciDb.Close();
         _ciDb = null!;
+    }
+
+    private void generateArtifactContent()
+    {
+        // get the artifacts from the database
+        List<ArtifactRecord> artifacts = ArtifactRecord.SelectList(_db);
+
+        // iterate over artifacts and create the confluence content
+        foreach (ArtifactRecord artifact in artifacts)
+        {
+            processArtifact(artifact);
+        }
+    }
+
+    private void processArtifact(ArtifactRecord artifact)
+    {
+        // look up the artifact in the CI database to get additional information
+        if (_ciDb is null)
+        {
+            return;
+        }
+
+        // act depending on artifact type
+        switch (artifact.ArtifactType?.ToLowerInvariant())
+        {
+            case "primitiveType":
+                break;
+            case "complexType":
+                break;
+            case "extension":
+            case "resource":
+            case "interface":
+            case "profile":
+                generateStructureContent(artifact);
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    private string getStructureElementResultContent(ArtifactRecord artifact, CgDbStructure structure)
+    {
+        // get the list of elements, sorted by order
+        List<CgDbElement> elements = CgDbElement.SelectList(
+            _ciDb, 
+            StructureKey: structure.Key, 
+            IsInherited: false,
+            orderByProperties: [nameof(CgDbElement.ResourceFieldOrder)]);
+
+        StringBuilder sb = new StringBuilder();
+
+        sb.AppendLine("<table>");
+        sb.AppendLine("    <thead>");
+        sb.AppendLine("        <tr>");
+        sb.AppendLine("            <th>Path</th>");
+        sb.AppendLine("            <th>Is Required</th>");
+        sb.AppendLine("            <th>Not Array</th>");
+        sb.AppendLine("            <th>Trial Use</th>");
+        sb.AppendLine("            <th>Has fixed[x]</th>");
+        sb.AppendLine("            <th>Has pattern[x]</th>");
+        sb.AppendLine("            <th>Required Binding</th>");
+        sb.AppendLine("            <th>External Required Binding</th>");
+        sb.AppendLine("            <th>Check <code>meaningWhenMissing</code></th>");
+        sb.AppendLine("            <th>Is Modifier</th>");
+        //sb.AppendLine("            <th></th>");
+        //sb.AppendLine("            <th></th>");
+        //sb.AppendLine("            <th></th>");
+        sb.AppendLine("        </tr>");
+        sb.AppendLine("    </thead>");
+        sb.AppendLine("    <tbody>");
+
+        foreach (CgDbElement element in elements)
+        {
+            string? requiredBinding = (element.ValueSetBindingStrength?.Equals("required", StringComparison.OrdinalIgnoreCase) == true)
+                ? "X"
+                : null;
+            
+            if ((requiredBinding is not null) &&
+                (element.BindingValueSetKey is not null))
+            {
+                // check to see if there is an escape code in the VS
+                List<CgDbValueSetConcept> concepts = CgDbValueSetConcept.SelectList(
+                    _ciDb,
+                    ValueSetKey: element.BindingValueSetKey.Value);
+
+                // check to see if there is an 'other' code
+                bool hasOther = concepts.Any(c => _otherCodes.Contains(c.Code));
+
+                // check to see if there is an 'unknown' code
+                bool hasUnknown = concepts.Any(c => _unknownCodes.Contains(c.Code));
+
+                if (hasOther && hasUnknown)
+                {
+                    // both other and unknown are present, just
+                    requiredBinding = "Has 'other' and 'unknown'";
+                }
+                else if (hasOther || hasUnknown)
+                {
+                    // one of the two is present, so we can flag this
+                    requiredBinding = hasOther ? "Has 'other'" : "Has 'unknown'";
+                }
+                else
+                {
+                    // neither is present, so we cannot flag this
+                    requiredBinding = "NO 'other' or 'unknown'";
+                }
+            }
+
+            if ((requiredBinding is not null) &&
+                (element.MinCardinality == 0))
+            {
+                requiredBinding = "<i>optional</i> - " + requiredBinding;
+            }
+
+            requiredBinding ??= string.Empty;
+
+            string? externalRequiredBinding =
+                (element.ValueSetBindingStrength?.Equals("required", StringComparison.OrdinalIgnoreCase) == true) &&
+                (element.BindingValueSet?.StartsWith("http://hl7.org/", StringComparison.OrdinalIgnoreCase) != true)
+                ? element.BindingValueSet
+                : null;
+
+            string shouldAddMeaningWhenMissing = 
+                (element.MinCardinality == 0) && (element.MeaningWhenMissing is null) && 
+                (element.FullCollatedTypeLiteral.Contains("code", StringComparison.Ordinal) || element.FullCollatedTypeLiteral.Contains("boolean"))
+                ? "X"
+                : string.Empty;
+
+            sb.AppendLine("        <tr>");
+            sb.AppendLine($"            <td><code>{element.Path}</code></td>");
+            sb.AppendLine($"            <td>{(element.MinCardinality > 0 ? "X" : string.Empty)}</td>");
+            sb.AppendLine($"            <td>{(element.MaxCardinality != 1 ? "X" : string.Empty)}</td>");
+            sb.AppendLine($"            <td>{(element.StandardStatus?.Equals("trial-use", StringComparison.OrdinalIgnoreCase) == true ? "X" : string.Empty)}</td>");
+            sb.AppendLine($"            <td>{(element.FixedValue is null ? string.Empty : "X")}</td>");
+            sb.AppendLine($"            <td>{(element.PatternValue is null ? string.Empty : "X")}</td>");
+            sb.AppendLine($"            <td>{requiredBinding}</td>");
+            sb.AppendLine($"            <td><code>{externalRequiredBinding}</code></td>");
+            sb.AppendLine($"            <td>{shouldAddMeaningWhenMissing}</td>");
+            sb.AppendLine($"            <td>{(element.IsModifier ? (string.IsNullOrEmpty(element.IsModifierReason) ? "NO REASON" : "X") : string.Empty)}</td>");
+            sb.AppendLine("        </tr>");
+        }
+
+        sb.AppendLine("    </tbody>");
+        sb.AppendLine("</table>");
+
+        return sb.ToString();
+    }
+
+    private void generateStructureContent(ArtifactRecord artifact)
+    {
+        // get the structure from the CI database
+        CgDbStructure? structure = CgDbStructure.SelectSingle(
+            _ciDb,
+            Id: artifact.FhirId);
+
+        if (structure is null)
+        {
+            throw new InvalidOperationException($"Could not find structure with Id '{artifact.FhirId}' in CI database.");
+        }
+
+        string wgCode = artifact.ResponsibleWorkGroup ?? _missingWgCode;
+        string pageName = artifact.FhirId;
+
+        SpecPageRecord? infoPage = artifact.IntroPageFilename is null
+            ? null
+            : SpecPageRecord.SelectSingle(_db, PageFileName: artifact.IntroPageFilename);
+
+        SpecPageRecord? notesPage = artifact.NotesPageFilename is null
+            ? null
+            : SpecPageRecord.SelectSingle(_db, PageFileName: artifact.NotesPageFilename);
+
+        string content = $$$"""
+            <ac:structured-macro ac:name="panel">
+                <ac:parameter ac:name="title">R6 Checklist for {{{artifact.FhirId}}}</ac:parameter>
+                <ac:rich-text-body>
+                    <h2>Artifact {{{artifact.FhirId}}} ({{{artifact.Name}}})</h2>
+
+                    <h2>Information Page</h2>
+                    {{{(infoPage is null ? "Not defined!" : getPageResultContent(infoPage))}}}
+
+                    <h2>Notes Page</h2>
+                    {{{(notesPage is null ? "Not defined!" : getPageResultContent(notesPage))}}}
+
+                    <h2>Element Review</h2>
+                    {{{getStructureElementResultContent(artifact, structure)}}}
+                </ac:rich-text-body>
+            </ac:structured-macro>
+            """;
+
+        if (_config.LocalExportDir is not null)
+        {
+            writeToFile($"sd_{pageName}.html", content, Path.Combine(_config.LocalExportDir, wgCode));
+        }
+
+        //if ((_config.ConfluenceBaseUrl is not null) &&
+        //    (_config.ConfluenceSpaceKey is not null) &&
+        //    (_config.ConfluencePersonalAccessToken is not null) &&
+        //    (_config.ConfluenceRootPageId is not null))
+        //{
+        //    int? pageId = writeToConfluence(_config.ConfluenceRootPageId.Value, workgroup?.ConfluencePageId, wgTitle, content);
+
+        //    if ((workgroup is not null) &&
+        //        (pageId is not null) &&
+        //        (pageId != workgroup.ConfluencePageId))
+        //    {
+        //        workgroup.ConfluencePageId = pageId;
+        //        workgroup.Update(_db);
+        //    }
+        //    else if ((workgroup is null) &&
+        //             (pageId is not null) &&
+        //             (pageId != _wgNotSpecifiedPageId))
+        //    {
+        //        _wgNotSpecifiedPageId = pageId;
+        //    }
+        //}
     }
 
     private void generatePageContent()
@@ -114,10 +348,9 @@ public class ConfluenceGenerator
         }
     }
 
-    private void genSpecPageContent(SpecPageRecord page)
+    private string getPageResultContent(SpecPageRecord page)
     {
         string wgCode = page.ResponsibleWorkGroup ?? _missingWgCode;
-        string pageName = Path.GetFileNameWithoutExtension(page.PageFileName);
 
         // resolve related lists
         List<SpecPageRemovedFhirArtifactRecord> removedFhirArtifactRecords = SpecPageRemovedFhirArtifactRecord.SelectList(_db, PageId: page.Id);
@@ -125,11 +358,6 @@ public class ConfluenceGenerator
         List<SpecPageImageRecord> imgIssueRecords = SpecPageImageRecord.SelectList(_db, PageId: page.Id);
 
         string content = $$$"""
-            <ac:structured-macro ac:name="panel">
-                <ac:parameter ac:name="title">R6 Checklist for {{{page.PageFileName}}}</ac:parameter>
-                <ac:rich-text-body>
-                    <h2>Specification Page: {{{page.PageFileName}}}</h2>
-
                     <h3>General Information:</h3>
                     <table>
                         <tbody>
@@ -170,7 +398,7 @@ public class ConfluenceGenerator
                                 <td><code>{{{(page.ExistsInSource == true ? "Yes" : "No")}}}</code></td>
                             </tr>
                             <tr>
-                                <td><code>deprecated</code> Literal Count</td>
+                                <td>'<code>deprecated</code>' Literal Count</td>
                                 <td><code>{{{page.DeprecatedLiteralCount ?? 0}}}</code></td>
                             </tr>
                             <tr>
@@ -186,6 +414,7 @@ public class ConfluenceGenerator
 
 
                     <h3>Conformance Language Summary</h3>
+                    <p>'Conformant' conformance language appears in all-upper case. 'Non-conformant' covers all other cases appearing in the content.</p>
                     <table>
                         <thead>
                             <tr>
@@ -297,13 +526,30 @@ public class ConfluenceGenerator
                             "\n            ",
                             page.ReaderReviewNotes?.Select(note => $"<li>{note}</li>") ?? [])}}}
                     </ul>
+            """;
+
+        return content;
+    }
+
+    private void genSpecPageContent(SpecPageRecord page)
+    {
+        string wgCode = page.ResponsibleWorkGroup ?? _missingWgCode;
+        string pageName = Path.GetFileNameWithoutExtension(page.PageFileName);
+
+        string content = $$$"""
+            <ac:structured-macro ac:name="panel">
+                <ac:parameter ac:name="title">R6 Checklist for {{{page.PageFileName}}}</ac:parameter>
+                <ac:rich-text-body>
+                    <h2>Specification Page: {{{page.PageFileName}}}</h2>
+
+                    {{{getPageResultContent(page)}}}
                 </ac:rich-text-body>
             </ac:structured-macro>
             """;
 
         if (_config.LocalExportDir is not null)
         {
-            writeToFile($"{pageName}.html", content, Path.Combine(_config.LocalExportDir, wgCode));
+            writeToFile($"page_{pageName}.html", content, Path.Combine(_config.LocalExportDir, wgCode));
         }
 
         //if ((_config.ConfluenceBaseUrl is not null) &&
@@ -488,7 +734,9 @@ public class ConfluenceGenerator
             }
 
             string fullFilename = Path.Combine(dir, filename);
-            File.WriteAllText(fullFilename, "<html><body>\n" + content + "\n</body></html>");
+            File.WriteAllText(
+                fullFilename,
+                "<html><head><style>table, th, td {border: 1px solid;}</style></head><body>\n" + content + "\n</body></html>");
         }
     }
 
