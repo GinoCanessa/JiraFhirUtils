@@ -18,13 +18,14 @@ public enum ContentDispositionCodes
 }
 
 [JfSQLiteTable("workgroups")]
-public partial record class WorkGroupInfoRecord
+public partial record class WorkgroupRecord
 {
     [JfSQLiteUnique]
     public required string Code { get; set; }
     public required string Title { get; set; }
     public required string OfficialUrl { get; set; }
     public required string? ReplacedBy { get; set; }
+    public int? ConfluencePageId { get; set; } = null;
 }
 
 
@@ -40,6 +41,8 @@ public partial record class SpecPageRecord
     [JfSQLiteForeignKey("artifacts", nameof(ArtifactRecord.Id))]
     public required int? ArtifactId { get; set; } = null;
     public required string? FhirArtifactId { get; set; } = null;
+    public int? ConfluencePageId { get; set; } = null;
+
 
     public string? ResponsibleWorkGroup { get; set; } = null;
     public string? MaturityLabel { get; set; } = null;
@@ -144,6 +147,8 @@ public partial record class ArtifactRecord
 
     [JfSQLiteUnique]
     public required string FhirId { get; set; }
+
+    public int? ConfluencePageId { get; set; } = null;
 
     public required string Name { get; set; }
     public string? DefinitionArtifactType { get; set; } = null;

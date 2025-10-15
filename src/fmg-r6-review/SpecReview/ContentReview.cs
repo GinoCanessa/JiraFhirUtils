@@ -172,7 +172,6 @@ public class ContentReview
 
     private string _fhirRepoPath;
     private IDbConnection? _db = null;
-
     private IDbConnection? _ciDb = null;
 
     public ContentReview(CliConfig config)
@@ -482,6 +481,11 @@ public class ContentReview
             Console.WriteLine($"Processing artifact: '{artifact.FhirId}': {artifact.ArtifactType} ({artifact.DefinitionArtifactType})...");
             doArtifactReview(artifact);
         }
+
+        _db.Close();
+        _db = null;
+        _ciDb.Close();
+        _ciDb = null;
     }
 
     private void cleanDeletedPageRecords()

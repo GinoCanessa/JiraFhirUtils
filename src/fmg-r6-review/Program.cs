@@ -14,7 +14,7 @@ internal class Program
     {
         CliOptions config = new CliOptions();
 
-        RootCommand root = new RootCommand("JIRA FHIR loader CLI");
+        RootCommand root = new RootCommand("FHIR FMG R6 Prep Tool");
 
         // Create commands from CliOptions.Commands so the list is defined in one place
         foreach ((string name, Command cmd) in CliOptions.Commands)
@@ -28,6 +28,9 @@ internal class Program
                 case CliProcessCommand.CommandName:
                     cmd.SetAction(ProcessCommandHandler);
                     break;
+                case CliGenerateCommand.CommandName:
+                    cmd.SetAction(GenerateCommandHandler);
+                    break;
             }
 
             root.Add(cmd);
@@ -40,16 +43,41 @@ internal class Program
         return _retVal;
     }
 
-    private static void ProcessCommandHandler(ParseResult pr)
+    private static void GenerateCommandHandler(ParseResult pr)
     {
-        if (pr.CommandResult.Command is not CliProcessCommand pc)
+        if (pr.CommandResult.Command is not CliGenerateCommand genCommand)
         {
             Console.WriteLine("Incorrect mapping from command to command handler!");
             _retVal = 1;
             return;
         }
 
-        CliConfig config = new(pc.CommandCliOptions, pr);
+        CliConfig config = new(genCommand.CommandCliOptions, pr);
+
+        try
+        {
+            Generate.ConfluenceGenerator generator = new(config);
+            generator.Generate();
+
+            _retVal = 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing JIRA XML files: {ex.Message}");
+            _retVal = ex.HResult;
+        }
+    }
+
+    private static void ProcessCommandHandler(ParseResult pr)
+    {
+        if (pr.CommandResult.Command is not CliProcessCommand processCommand)
+        {
+            Console.WriteLine("Incorrect mapping from command to command handler!");
+            _retVal = 1;
+            return;
+        }
+
+        CliConfig config = new(processCommand.CommandCliOptions, pr);
 
         try
         {
@@ -74,13 +102,15 @@ internal class Program
 
     private static void CreateDictCommandHandler(ParseResult pr)
     {
-        if (pr.CommandResult.Command is not CliCreateDictDbCommand cc)
+        if (pr.CommandResult.Command is not CliCreateDictDbCommand createDictCommand)
         {
             Console.WriteLine("Incorrect mapping from command to command handler!");
             _retVal = 1;
             return;
         }
-        CliConfig config = new(cc.CommandCliOptions, pr);
+
+        CliConfig config = new(createDictCommand.CommandCliOptions, pr);
+
         try
         {
             DictLoader loader = new(config);

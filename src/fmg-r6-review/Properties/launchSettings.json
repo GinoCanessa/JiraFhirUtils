@@ -6,7 +6,11 @@
     },
     "process": {
       "commandName": "Project",
-      "commandLineArgs": "process --db-path fmg_review.sqlite --fhir-repo-path specs\\fhir --drop-tables --fhir-ci-db fhir-r6.sqlite --fhir-published-db fhir.sqlite --dict-db dict.sqlite"
+      "commandLineArgs": "process --db-path fmg_review.sqlite --fhir-repo-path specs\\fhir --fhir-ci-db fhir-r6.sqlite --fhir-published-db fhir.sqlite --dict-db dict.sqlite"
+    },
+    "gen local": {
+      "commandName": "Project",
+      "commandLineArgs": "generate --db-path fmg_review.sqlite --fhir-ci-db fhir-r6.sqlite --local-export-dir temp\\confluence"
     }
   }
 }

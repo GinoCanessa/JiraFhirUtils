@@ -8,7 +8,6 @@ namespace JiraFhirUtils.Common;
 
 public static class FileUtils
 {
-
     public static string? FindRelativeDir(
         string? startDir,
         string dirName,

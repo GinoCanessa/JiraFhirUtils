@@ -15,6 +15,7 @@ public record class CliOptions
     {
         ( CliProcessCommand.CommandName, new CliProcessCommand() ),
         ( CliCreateDictDbCommand.CommandName, new CliCreateDictDbCommand() ),
+        ( CliGenerateCommand.CommandName, new CliGenerateCommand() ),
     };
 
     public Option<string?> DbPath { get; set; } = new Option<string?>("--db-path")
@@ -75,6 +76,49 @@ public record class CliOptions
         Arity = ArgumentArity.ZeroOrOne,
         DefaultValueFactory = (ar) => null,
     };
+
+    public Option<string?> ConfluenceBaseUrl { get; set; } = new Option<string?>("--confluence-base-url")
+    {
+        Description = "Confluence base URL for generated content.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => "https://confluence.hl7.org/",
+    };
+
+    public Option<string?> ConfluenceSpaceKey { get; set; } = new Option<string?>("--confluence-space-key")
+    {
+        Description = "Confluence space key for generated content.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => "FMG",
+    };
+
+    public Option<string?> ConfluencePersonalAccessToken { get; set; } = new Option<string?>("--confluence-pat")
+    {
+        Description = "Confluence personal access token for authentication.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+
+    public Option<int?> ConfluenceRootPageId { get; set; } = new Option<int?>("--confluence-root-page-id")
+    {
+        Description = "Confluence root page ID for generated content.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+
+    public Option<string?> ConfluenceUserAgent { get; set; } = new Option<string?>("--confluence-user-agent")
+    {
+        Description = "User-Agent string to use for Confluence API requests.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+
+    public Option<string?> LocalExportDir { get; set; } = new Option<string?>("--local-export-dir")
+    {
+        Description = "Path to a local directory for exporting generated content instead of Confluence.",
+        Arity = ArgumentArity.ZeroOrOne,
+        DefaultValueFactory = (ar) => null,
+    };
+
 }
 
 public record class CliConfig
@@ -87,6 +131,14 @@ public record class CliConfig
     public required string? DictionaryDbPath { get; init; }
     public required string? DictionarySourcePath { get; init; }
     public required string? DictionarySourceTgz { get; init; }
+
+    public string? ConfluenceBaseUrl { get; init; }
+    public string? ConfluenceSpaceKey { get; init; }
+    public string? ConfluencePersonalAccessToken { get; init; }
+    public int? ConfluenceRootPageId { get; init; }
+    public string? ConfluenceUserAgent { get; init; }
+
+    public string? LocalExportDir { get; init; }
 
     public CliConfig() { }
 
@@ -202,10 +254,52 @@ public record class CliConfig
             DictionarySourceTgz = null;
         }
 
+        string? localExportDirParam = pr.GetValue(opt.LocalExportDir);
+        if (!string.IsNullOrEmpty(localExportDirParam))
+        {
+            string? localExportDir = FileUtils.FindRelativeDir(null, localExportDirParam, false)
+                ?? localExportDirParam;
+            if (!Directory.Exists(localExportDir) && !Path.IsPathFullyQualified(localExportDir))
+            {
+                localExportDir = Path.Combine(Environment.CurrentDirectory, localExportDir);
+            }
+            LocalExportDir = localExportDir;
+        }
+        else
+        {
+            LocalExportDir = null;
+        }
+
         // load options that do not require extra processing
         DropTables = pr.GetValue(opt.LoadDropTables);
+        ConfluenceBaseUrl = pr.GetValue(opt.ConfluenceBaseUrl);
+        ConfluenceSpaceKey = pr.GetValue(opt.ConfluenceSpaceKey);
+        ConfluencePersonalAccessToken = pr.GetValue(opt.ConfluencePersonalAccessToken);
+        ConfluenceRootPageId = pr.GetValue(opt.ConfluenceRootPageId);
+        ConfluenceUserAgent = pr.GetValue(opt.ConfluenceUserAgent);
     }
 }
+
+public class CliGenerateCommand : Command
+{
+    public const string CommandName = "generate";
+
+    private CliOptions _cliOptions = new();
+    public CliOptions CommandCliOptions => _cliOptions;
+
+    public CliGenerateCommand() : base(CommandName, "Generate Confluence pages for the current status.")
+    {
+        // Add options defined in CliOptions
+        this.Add(_cliOptions.DbPath);
+        this.Add(_cliOptions.FhirDatabaseCi);
+        this.Add(_cliOptions.ConfluenceBaseUrl);
+        this.Add(_cliOptions.ConfluenceSpaceKey);
+        this.Add(_cliOptions.ConfluencePersonalAccessToken);
+        this.Add(_cliOptions.ConfluenceRootPageId);
+        this.Add(_cliOptions.LocalExportDir);
+    }
+}
+
 
 public class CliProcessCommand : Command
 {

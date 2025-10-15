@@ -30,12 +30,12 @@ public class WorkGroupLoader
         db.Open();
 
         // drop table first
-        WorkGroupInfoRecord.DropTable(db);
+        WorkgroupRecord.DropTable(db);
 
         // create table
-        WorkGroupInfoRecord.CreateTable(db);
+        WorkgroupRecord.CreateTable(db);
 
-        List<WorkGroupInfoRecord> wgs = [];
+        List<WorkgroupRecord> wgs = [];
 
         // iterate over known work groups and insert them into the database
         foreach ((string code, string title) in FhirCommon.WorkgroupNames)
@@ -47,7 +47,7 @@ public class WorkGroupLoader
 
             _ = FhirCommon.WorkgroupReplacement.TryGetValue(code, out string? replacedBy);
 
-            wgs.Add(new WorkGroupInfoRecord
+            wgs.Add(new WorkgroupRecord
             {
                 Code = code,
                 Title = title,
