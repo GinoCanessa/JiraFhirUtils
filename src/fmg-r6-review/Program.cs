@@ -58,8 +58,10 @@ internal class Program
             wgLoader.LoadWorkGroups();
 
             // process the pages
-            SpecReview.PageReview pageProcessor = new(config);
-            pageProcessor.ProcessPages();
+            SpecReview.ContentReview reviewProcessor = new(config);
+
+            reviewProcessor.ProcessPages();
+            reviewProcessor.ProcessArtifacts();
 
             _retVal = 0;
         }

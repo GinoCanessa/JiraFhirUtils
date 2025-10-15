@@ -27,17 +27,19 @@ public partial record class WorkGroupInfoRecord
     public required string? ReplacedBy { get; set; }
 }
 
+
 [JfSQLiteTable("pages")]
 public partial record class SpecPageRecord
 {
     [JfSQLiteKey]
-    public required int PageId { get; set; } = -1;
+    public required int Id { get; set; } = -1;
 
     [JfSQLiteUnique]
     public required string PageFileName { get; set; }
 
-    public required bool ExistsInPublishIni { get; set; }
-    public required bool ExistsInSource { get; set; }
+    [JfSQLiteForeignKey("artifacts", nameof(ArtifactRecord.Id))]
+    public required int? ArtifactId { get; set; } = null;
+    public required string? FhirArtifactId { get; set; } = null;
 
     public string? ResponsibleWorkGroup { get; set; } = null;
     public string? MaturityLabel { get; set; } = null;
@@ -51,6 +53,11 @@ public partial record class SpecPageRecord
 
     public string? ManagementComments { get; set; } = null;
     public string? WorkGroupComments { get; set; } = null;
+
+
+    public required bool? ExistsInPublishIni { get; set; }
+    public required bool ExistsInSource { get; set; }
+
 
     public int? ConformantShallCount { get; set; } = null;
     public int? ConformantShouldCount { get; set; } = null;
@@ -92,7 +99,7 @@ public partial record class SpecPageImageRecord
     [JfSQLiteKey]
     public required int Id { get; set; } = -1;
 
-    [JfSQLiteForeignKey("pages", nameof(SpecPageRecord.PageId))]
+    [JfSQLiteForeignKey("pages", nameof(SpecPageRecord.Id))]
     public required int PageId { get; set; }
 
     public required string Source { get; set; }
@@ -108,7 +115,7 @@ public partial record class SpecPageRemovedFhirArtifactRecord
     [JfSQLiteKey]
     public required int Id { get; set; } = -1;
 
-    [JfSQLiteForeignKey("pages", nameof(SpecPageRecord.PageId))]
+    [JfSQLiteForeignKey("pages", nameof(SpecPageRecord.Id))]
     public required int PageId { get; set; }
 
     public required string Word { get; set; }
@@ -121,13 +128,44 @@ public partial record class SpecPageUnknownWordRecord
     [JfSQLiteKey]
     public required int Id { get; set; } = -1;
 
-    [JfSQLiteForeignKey("pages", nameof(SpecPageRecord.PageId))]
+    [JfSQLiteForeignKey("pages", nameof(SpecPageRecord.Id))]
     public required int PageId { get; set; }
 
     public required string Word { get; set; }
     public required bool IsTypo { get; set; }
 }
 
-public partial record class CoreResourceRecord
+[JfSQLiteTable("artifacts")]
+[JfSQLiteIndex(nameof(Name))]
+public partial record class ArtifactRecord
 {
+    [JfSQLiteKey]
+    public required int Id { get; set; } = -1;
+
+    [JfSQLiteUnique]
+    public required string FhirId { get; set; }
+
+    public required string Name { get; set; }
+    public string? DefinitionArtifactType { get; set; } = null;
+    public string? ArtifactType { get; set; } = null;
+
+    public bool? SourceDirectoryExists { get; set; } = null;
+    public bool? SourceDefinitionExists { get; set; } = null;
+
+    public string? ResponsibleWorkGroup { get; set; } = null;
+    public string? Status { get; set; } = null;
+    public int? MaturityLevel { get; set; } = null;
+    public string? StandardsStatus { get; set; } = null;
+
+    public ContentDispositionCodes ContentDisposition { get; set; } = ContentDispositionCodes.Unknown;
+    public string? DispositionLocation { get; set; } = null;
+
+    public bool? ReadyForRemoval { get; set; } = null;
+
+    public string? ManagementComments { get; set; } = null;
+    public string? WorkGroupComments { get; set; } = null;
+
+
+    public string? IntroPageFilename { get; set; } = null;
+    public string? NotesPageFilename { get; set; } = null;
 }

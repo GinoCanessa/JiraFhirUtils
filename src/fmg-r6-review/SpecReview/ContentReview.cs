@@ -16,7 +16,7 @@ using System.Threading.Tasks;
 
 namespace fmg_r6_review.SpecReview;
 
-public class PageReview
+public class ContentReview
 {
     private CliConfig _config;
 
@@ -173,7 +173,9 @@ public class PageReview
     private string _fhirRepoPath;
     private IDbConnection? _db = null;
 
-    public PageReview(CliConfig config)
+    private IDbConnection? _ciDb = null;
+
+    public ContentReview(CliConfig config)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
 
@@ -434,6 +436,303 @@ public class PageReview
         return words.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    public void ProcessArtifacts()
+    {
+        if (!_haveCiDb)
+        {
+            throw new InvalidOperationException("CI FHIR database is required to process artifacts.");
+        }
+
+        Console.WriteLine("Processing FHIR resources...");
+        Console.WriteLine($"Using database: {_config.DbPath}");
+        Console.WriteLine($"Using FHIR repository path: {_config.FhirRepoPath}");
+
+        using IDbConnection db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_config.DbPath}");
+        db.Open();
+        _db = db;
+
+        using IDbConnection? ciDb = (!string.IsNullOrEmpty(_config.FhirDatabaseCi) && File.Exists(_config.FhirDatabaseCi)) ?
+            new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_config.FhirDatabaseCi}") :
+            null;
+
+        if (ciDb is null)
+        {
+            throw new InvalidOperationException("CI FHIR database is required to process artifacts.");
+        }
+        ciDb.Open();
+        _ciDb = ciDb;
+
+        // ensure our tables exist
+        if (_config.DropTables)
+        {
+            ArtifactRecord.DropTable(_db);
+
+            SpecPageRecord.Delete(_db, ArtifactIdIsNull: false);
+            cleanDeletedPageRecords();
+        }
+
+        ArtifactRecord.CreateTable(_db);
+        SpecPageRecord.CreateTable(_db);
+
+        // load the initial set of resources we are working with
+        List<ArtifactRecord> artifacts = buildArtifactList();
+        // traverse the resources and perform review checks
+        foreach (ArtifactRecord artifact in artifacts)
+        {
+            Console.WriteLine($"Processing artifact: '{artifact.FhirId}': {artifact.ArtifactType} ({artifact.DefinitionArtifactType})...");
+            doArtifactReview(artifact);
+        }
+    }
+
+    private void cleanDeletedPageRecords()
+    {
+        if (_db is null)
+        {
+            throw new InvalidOperationException("Database connection is not initialized.");
+        }
+
+        {
+            IDbCommand command = _db.CreateCommand();
+            command.CommandText = 
+                $"DELETE from {SpecPageImageRecord.DefaultTableName}" +
+                $" where {nameof(SpecPageImageRecord.PageId)} NOT IN (SELECT {nameof(SpecPageRecord.Id)} FROM {SpecPageRecord.DefaultTableName})";
+            command.ExecuteNonQuery();
+        }
+
+        {
+            IDbCommand command = _db.CreateCommand();
+            command.CommandText =
+                $"DELETE from {SpecPageRemovedFhirArtifactRecord.DefaultTableName}" +
+                $" where {nameof(SpecPageRemovedFhirArtifactRecord.PageId)} NOT IN (SELECT {nameof(SpecPageRecord.Id)} FROM {SpecPageRecord.DefaultTableName})";
+            command.ExecuteNonQuery();
+        }
+
+        {
+            IDbCommand command = _db.CreateCommand();
+            command.CommandText =
+                $"DELETE from {SpecPageUnknownWordRecord.DefaultTableName}" +
+                $" where {nameof(SpecPageUnknownWordRecord.PageId)} NOT IN (SELECT {nameof(SpecPageRecord.Id)} FROM {SpecPageRecord.DefaultTableName})";
+            command.ExecuteNonQuery();
+        }
+    }
+
+    private void doArtifactReview(ArtifactRecord artifact)
+    {
+        if (_db is null)
+        {
+            throw new InvalidOperationException("Database connection is not initialized.");
+        }
+        if (_ciDb is null)
+        {
+            throw new InvalidOperationException("CI FHIR database is not available.");
+        }
+
+        // get the db record for this artifact
+        CgDbStructure? structure = CgDbStructure.SelectSingle(_ciDb, Id: artifact.FhirId);
+
+        if (structure is null)
+        {
+            throw new Exception($"Structure not found in CI database for artifact '{artifact.FhirId}'.");
+        }
+
+        ArtifactRecord modified = artifact with { };
+
+        (string? expectedDir, string? expectedDefinitionFile) = getExpectedLocations(modified, structure);
+
+        if (expectedDir is null)
+        {
+            modified.SourceDirectoryExists = false;
+            modified.SourceDefinitionExists = false;
+            modified.IntroPageFilename = null;
+            modified.NotesPageFilename = null;
+        }
+        else
+        {
+            modified.SourceDirectoryExists = Directory.Exists(expectedDir);
+
+            if ((expectedDefinitionFile is null) || (modified.SourceDirectoryExists != true))
+            {
+                modified.SourceDefinitionExists = false;
+                modified.IntroPageFilename = null;
+                modified.NotesPageFilename = null;
+            }
+            else
+            {
+                modified.SourceDefinitionExists = File.Exists(expectedDefinitionFile);
+
+                string shortName = Path.GetFileNameWithoutExtension(expectedDefinitionFile).ToLowerInvariant();
+
+                if (shortName.StartsWith("structuredefinition-", StringComparison.Ordinal))
+                {
+                    shortName = shortName["structuredefinition-".Length..];
+                }
+
+                string introFilename = $"{shortName}-introduction.xml";
+                string notesFilename = $"{shortName}-notes.xml";
+
+                modified.IntroPageFilename = File.Exists(Path.Combine(expectedDir, introFilename))
+                    ? introFilename
+                    : null;
+                modified.NotesPageFilename = File.Exists(Path.Combine(expectedDir, notesFilename))
+                    ? notesFilename
+                    : null;
+            }
+        }
+
+        modified.ResponsibleWorkGroup = structure.WorkGroup;
+        modified.Status = structure.Status;
+        modified.MaturityLevel = structure.FhirMaturity;
+        modified.StandardsStatus = structure.StandardStatus;
+
+        modified.Update(_db);
+
+        if ((expectedDir is not null) && (modified.IntroPageFilename is not null))
+        {
+            SpecPageRecord? introPage = doArtifactPageReview(
+                modified,
+                expectedDir,
+                modified.IntroPageFilename);
+        }
+
+        if ((expectedDir is not null) && (modified.NotesPageFilename is not null))
+        {
+            SpecPageRecord? notesPage = doArtifactPageReview(
+                modified,
+                expectedDir,
+                modified.NotesPageFilename);
+        }
+    }
+
+    private (string? sourceDir, string? definitionFile) getExpectedLocations(
+        ArtifactRecord artifact,
+        CgDbStructure? structure)
+    {
+        switch (artifact.ArtifactType?.ToLowerInvariant())
+        {
+            case "interface":
+            case "resource":
+                return (
+                    Path.Combine(_fhirRepoPath, "source", artifact.FhirId.ToLowerInvariant()),
+                    Path.Combine(_fhirRepoPath, "source", artifact.FhirId.ToLowerInvariant(), $"structuredefinition-{artifact.FhirId}.xml"));
+
+            case "profile":
+                {
+                    // for profiles, we need the structure information to get the file location
+                    if ((structure is null) || (structure.BaseDefinitionShort is null))
+                    {
+                        return (null, null);
+                    }
+
+                    return (
+                        Path.Combine(_fhirRepoPath, "source", structure.BaseDefinitionShort.ToLowerInvariant()),
+                        Path.Combine(
+                            _fhirRepoPath, 
+                            "source", 
+                            structure.BaseDefinitionShort.ToLowerInvariant(), 
+                            $"{structure.BaseDefinitionShort.ToLowerInvariant()}-{artifact.FhirId}.xml"));
+                }
+
+            case "primitivetype":
+            case "primitive-type":
+            case "complextype":
+            case "complex-type":
+            default:
+                return (null, null);
+        }
+    }
+
+    private SpecPageRecord doArtifactPageReview(ArtifactRecord artifact, string artifactDirectory, string sourceFilename)
+    {
+        if (_db is null)
+        {
+            throw new InvalidOperationException("Database connection is not initialized.");
+        }
+        if (_ciDb is null)
+        {
+            throw new InvalidOperationException("CI FHIR database is not available.");
+        }
+
+        string fullFilename = Path.Combine(artifactDirectory, sourceFilename);
+
+        // check to see if there is a page record already
+        SpecPageRecord? page = SpecPageRecord.SelectSingle(_db, ArtifactId: artifact.Id, PageFileName: sourceFilename);
+        if (page is null)
+        {
+            page = new()
+            {
+                Id = SpecPageRecord.GetIndex(),
+                ArtifactId = artifact.Id,
+                FhirArtifactId = artifact.FhirId,
+                PageFileName = sourceFilename,
+                ExistsInPublishIni = null,
+                ExistsInSource = File.Exists(fullFilename),
+                ResponsibleWorkGroup = artifact.ResponsibleWorkGroup,
+                MaturityLabel = artifact.Status,
+                MaturityLevel = artifact.MaturityLevel,
+                StandardsStatus = artifact.StandardsStatus,
+            };
+
+            page.Insert(_db);
+        }
+        else if (!File.Exists(fullFilename))
+        {
+            page.ExistsInSource = false;
+            page.Update(_db);
+            return page;
+        }
+        else
+        {
+            page.ExistsInSource = true;
+        }
+
+        Console.WriteLine($"    Processing {artifact.FhirId} page: '{page.PageFileName}'...");
+        doPageReview(page, fullFilename);
+
+        return page;
+    }
+
+    private List<ArtifactRecord> buildArtifactList()
+    {
+        if (_db is null)
+        {
+            throw new InvalidOperationException("Database connection is not initialized.");
+        }
+
+        if (_ciDb is null)
+        {
+            throw new InvalidOperationException("CI FHIR database is not available.");
+        }
+
+        List<ArtifactRecord> artifacts = ArtifactRecord.SelectList(_db);
+        List<CgDbStructure> structures = CgDbStructure.SelectList(_ciDb);
+        List<ArtifactRecord> toInsert = [];
+        ILookup<string, ArtifactRecord> dbArtifactLookup = artifacts.ToLookup(p => p.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (CgDbStructure structure in structures)
+        {
+            if (!dbArtifactLookup.Contains(structure.Name))
+            {
+                ArtifactRecord artifact = new()
+                {
+                    Id = ArtifactRecord.GetIndex(),
+                    FhirId = structure.Id,
+                    Name = structure.Name,
+                    DefinitionArtifactType = "StructureDefinition",
+                    ArtifactType = structure.ArtifactClass,
+                };
+                artifacts.Add(artifact);
+                toInsert.Add(artifact);
+            }
+        }
+
+        if (toInsert.Count > 0)
+        {
+            toInsert.Insert(_db, ignoreDuplicates: false, insertPrimaryKey: true);
+        }
+
+        return artifacts;
+    }
+
     public void ProcessPages()
     {
         Console.WriteLine("Processing specification pages...");
@@ -466,11 +765,12 @@ public class PageReview
         foreach (SpecPageRecord page in pages)
         {
             Console.WriteLine($"Processing page '{page.PageFileName}'...");
-            doPageReview(page);
+            string sourceFile = Path.Combine(_fhirRepoPath, "source", page.PageFileName);
+            doPageReview(page, sourceFile);
         }
     }
 
-    private void doPageReview(SpecPageRecord page)
+    private void doPageReview(SpecPageRecord page, string fullFilename)
     {
         if (_db is null)
         {
@@ -485,8 +785,7 @@ public class PageReview
 
         SpecPageRecord modified = page with { };
 
-        string sourceFilePath = Path.Combine(_fhirRepoPath, "source", page.PageFileName);
-        if (!File.Exists(sourceFilePath))
+        if (!File.Exists(fullFilename))
         {
             Console.WriteLine($"Source file not found for page {page.PageFileName}");
             modified.ExistsInSource = false;
@@ -497,7 +796,7 @@ public class PageReview
         try
         {
             // read the source file
-            string htmlContent = File.ReadAllText(sourceFilePath);
+            string htmlContent = File.ReadAllText(fullFilename);
 
             // Parse HTML
             IDocument? doc = null;
@@ -523,16 +822,16 @@ public class PageReview
                 visibleText = visibleText[0..footerLoc];
             }
 
-            bool isStandardPage = true;
-
-            // perform necessary checks
-            modified.ResponsibleWorkGroup = extractWorkGroup(doc);
-
-            (isStandardPage, modified.MaturityLabel, modified.MaturityLevel, modified.StandardsStatus) = extractStatusInfo(doc);
-
-            if (!isStandardPage)
+            // perform necessary checks root page checks
+            if (page.ArtifactId is null)
             {
-                return;
+                bool isStandardPage = true;
+                modified.ResponsibleWorkGroup = extractWorkGroup(doc);
+                (isStandardPage, modified.MaturityLabel, modified.MaturityLevel, modified.StandardsStatus) = extractStatusInfo(doc);
+                if (!isStandardPage)
+                {
+                    return;
+                }
             }
 
             (modified.ConformantShallCount, modified.NonConformantShallCount) = getConformanceCounts(visibleText, ConformanceKeywordCodes.Shall);
@@ -559,21 +858,21 @@ public class PageReview
             int priorFhirVersionCount = 0;
             int deprecatedLiteralCount = 0;
 
-            // do word-processing on pages other than the credits page
+            // do word-processing on pages other than the credits artifact
             if (page.PageFileName != "credits.html")
             {
                 processWords(page, visibleText, ref priorFhirVersionCount, ref deprecatedLiteralCount);
             }
 
             // update word-based totals
-            modified.RemovedFhirArtifactCount = SpecPageRemovedFhirArtifactRecord.SelectCount(_db, PageId: page.PageId);
-            modified.UnknownWordCount = SpecPageUnknownWordRecord.SelectCount(_db, PageId: page.PageId, IsTypo: false);
-            modified.TypoWordCount = SpecPageUnknownWordRecord.SelectCount(_db, PageId: page.PageId, IsTypo: true);
+            modified.RemovedFhirArtifactCount = SpecPageRemovedFhirArtifactRecord.SelectCount(_db, PageId: page.Id);
+            modified.UnknownWordCount = SpecPageUnknownWordRecord.SelectCount(_db, PageId: page.Id, IsTypo: false);
+            modified.TypoWordCount = SpecPageUnknownWordRecord.SelectCount(_db, PageId: page.Id, IsTypo: true);
             modified.PriorFhirVersionReferenceCount = priorFhirVersionCount;
             modified.DeprecatedLiteralCount = deprecatedLiteralCount;
 
             // perform image checks
-            modified.ImagesWithIssuesCount = checkPageImages(doc, page.PageId);
+            modified.ImagesWithIssuesCount = checkPageImages(doc, page.Id);
 
             // check for incomplete markers
             modified.PossibleIncompleteMarkers = _incompleteMarkerRegex.Matches(visibleText)
@@ -714,7 +1013,7 @@ public class PageReview
                 // check to see if we have an existing record for this word
                 SpecPageUnknownWordRecord? unknownWord = SpecPageUnknownWordRecord.SelectSingle(
                     _db!,
-                    PageId: page.PageId,
+                    PageId: page.Id,
                     Word: word);
                 if (unknownWord is null)
                 {
@@ -722,7 +1021,7 @@ public class PageReview
                     unknownWord = new SpecPageUnknownWordRecord
                     {
                         Id = SpecPageUnknownWordRecord.GetIndex(),
-                        PageId = page.PageId,
+                        PageId = page.Id,
                         Word = word,
                         IsTypo = false,
                     };
@@ -888,7 +1187,7 @@ public class PageReview
             // check to see if we have an existing record for this word
             SpecPageRemovedFhirArtifactRecord? removedWord = SpecPageRemovedFhirArtifactRecord.SelectSingle(
                 _db!,
-                PageId: page.PageId,
+                PageId: page.Id,
                 Word: word);
 
             if (removedWord is null)
@@ -897,7 +1196,7 @@ public class PageReview
                 removedWord = new SpecPageRemovedFhirArtifactRecord
                 {
                     Id = SpecPageRemovedFhirArtifactRecord.GetIndex(),
-                    PageId = page.PageId,
+                    PageId = page.Id,
                     Word = word,
                     ArtifactClass = publishedArtifactClass ?? "Unknown",
                 };
@@ -920,7 +1219,7 @@ public class PageReview
                 // check to see if we have an existing record for this word
                 SpecPageUnknownWordRecord? typoRecord = SpecPageUnknownWordRecord.SelectSingle(
                     _db!,
-                    PageId: page.PageId,
+                    PageId: page.Id,
                     Word: word);
 
                 if (typoRecord is null)
@@ -929,7 +1228,7 @@ public class PageReview
                     typoRecord = new SpecPageUnknownWordRecord
                     {
                         Id = SpecPageUnknownWordRecord.GetIndex(),
-                        PageId = page.PageId,
+                        PageId = page.Id,
                         Word = word,
                         IsTypo = true,
                     };
@@ -1394,10 +1693,12 @@ public class PageReview
             {
                 SpecPageRecord newPage = new()
                 {
-                    PageId = SpecPageRecord.GetIndex(),
+                    Id = SpecPageRecord.GetIndex(),
                     PageFileName = iniPage,
                     ExistsInPublishIni = true,
                     ExistsInSource = File.Exists(Path.Combine(_fhirRepoPath, "source", iniPage)),
+                    ArtifactId = null,
+                    FhirArtifactId = null,
                 };
                 dbPages.Add(newPage);
                 toInsert.Add(newPage);
