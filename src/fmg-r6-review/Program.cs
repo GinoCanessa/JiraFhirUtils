@@ -84,6 +84,7 @@ internal class Program
             // make sure our workgroups are loaded
             SpecReview.WorkGroupLoader wgLoader = new(config);
             wgLoader.LoadWorkGroups();
+            wgLoader.LoadFmgFeedbackSheetContent();
 
             // process the pages
             SpecReview.ContentReview reviewProcessor = new(config);

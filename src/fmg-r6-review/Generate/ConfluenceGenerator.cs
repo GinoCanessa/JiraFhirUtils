@@ -88,6 +88,8 @@ public class ConfluenceGenerator
 
     }
 
+    private Dictionary<string, List<(string title, string relativeLink)>> _writtenPages = [];
+
     public void Generate()
     {
         using IDbConnection db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_config.DbPath}");
@@ -112,6 +114,37 @@ public class ConfluenceGenerator
 
         // process artifacts
         generateArtifactContent();
+
+        if (_config.LocalExportDir is not null)
+        {
+            StringBuilder indexSb = new();
+
+            indexSb.AppendLine("<h1>R6 Review Exported Content Index</h1>");
+
+            // process workgroups in alphabetical order
+            foreach ((string wgCode, List<(string title, string relativeLink)> wgPages) in _writtenPages.OrderBy(kvp => kvp.Key))
+            {
+                // split pages into ones that are in root or in directory
+                indexSb.AppendLine($"<h2>Workgroup: {wgCode}</h2>");
+
+                indexSb.AppendLine("<ul>");
+                foreach ((string title, string relativeLink) in wgPages.Where(v => v.relativeLink.Contains('/') == false).OrderBy(p => p.title))
+                {
+                    indexSb.AppendLine($"    <li><a href='{relativeLink}'>{title}</a></li>");
+                }
+
+                indexSb.AppendLine("<br/>");
+
+                foreach ((string title, string relativeLink) in wgPages.Where(v => v.relativeLink.Contains('/')).OrderBy(p => p.title))
+                {
+                    indexSb.AppendLine($"    <li><a href='{relativeLink}'>{title}</a></li>");
+                }
+
+                indexSb.AppendLine("</ul>");
+            }
+            writeToFile("index.html", indexSb.ToString());
+            Console.WriteLine($"Exported content to local directory: {_config.LocalExportDir}");
+        }
 
         // clean up
         _db.Close();
@@ -269,6 +302,8 @@ public class ConfluenceGenerator
 
     private void generateStructureContent(ArtifactRecord artifact)
     {
+        HashSet<string> pageTaskIds = [];
+
         // get the structure from the CI database
         CgDbStructure? structure = CgDbStructure.SelectSingle(
             _ciDb,
@@ -296,21 +331,40 @@ public class ConfluenceGenerator
                 <ac:rich-text-body>
                     <h2>Artifact {{{artifact.FhirId}}} ({{{artifact.Name}}})</h2>
 
-                    <h2>Information Page</h2>
+                    <h3>Urgent Item Checklist</h3>
+                    {{{getStructureUrgentChecklist(artifact, structure, pageTaskIds)}}}
+
+                    <h2>All Analysis Information</h2>
+                    The following content was generated to assist in the review of this artifact for R6 compliance.
+
+                    <h3>Information Page</h3>
                     {{{(infoPage is null ? "Not defined!" : getPageResultContent(infoPage))}}}
 
-                    <h2>Notes Page</h2>
+                    <h3>Notes Page</h3>
                     {{{(notesPage is null ? "Not defined!" : getPageResultContent(notesPage))}}}
 
-                    <h2>Element Review</h2>
+                    <h3>Element Review</h3>
                     {{{getStructureElementResultContent(artifact, structure)}}}
+
+                    <h3>Operations</h3>
+                    {{{getStructureOperationContent(artifact, structure)}}}
+
+                    <h3>Search Parameters</h3>
+                    {{{getStructureSearchParameterContent(artifact, structure)}}}
                 </ac:rich-text-body>
             </ac:structured-macro>
             """;
 
         if (_config.LocalExportDir is not null)
         {
-            writeToFile($"sd_{pageName}.html", content, Path.Combine(_config.LocalExportDir, wgCode));
+            string filename = $"sd_{pageName}.html";
+            writeToFile(filename, content, Path.Combine(_config.LocalExportDir, wgCode));
+            if (!_writtenPages.TryGetValue(wgCode, out List<(string title, string relativeLink)>? wgPageList))
+            {
+                wgPageList = [];
+                _writtenPages[wgCode] = wgPageList;
+            }
+            wgPageList.Add((structure.ArtifactClass.ToString() + " " + structure.Id, Path.Combine(wgCode, filename)));
         }
 
         //if ((_config.ConfluenceBaseUrl is not null) &&
@@ -334,6 +388,404 @@ public class ConfluenceGenerator
         //        _wgNotSpecifiedPageId = pageId;
         //    }
         //}
+    }
+
+    private string getStructureUrgentChecklist(
+        ArtifactRecord artifact, 
+        CgDbStructure structure,
+        HashSet<string> pageTaskIds)
+    {
+        StringBuilder sb = new StringBuilder();
+
+        //sb.AppendLine("        <ac:task-list>");
+        sb.AppendLine("        <ul>");
+
+        // necessary tasks depend on the disposition
+        switch (artifact.ContentDisposition)
+        {
+            case ContentDispositionCodes.Unknown:
+                addTasksForDispoUnknown(sb, artifact, structure, pageTaskIds);
+                break;
+            case ContentDispositionCodes.CoreAsNormative:
+                addTasksForDispoCoreNormative(sb, artifact, structure, pageTaskIds);
+                break;
+            case ContentDispositionCodes.MoveToGuide:
+                addTasksForDispoMoveToGuide(sb, artifact, structure, pageTaskIds);
+                break;
+            case ContentDispositionCodes.Remove:
+                addTasksForDispoRemove(sb, artifact, structure, pageTaskIds);
+                break;
+
+            // invalid states for artifacts
+            case ContentDispositionCodes.CoreAsInformative:
+            case ContentDispositionCodes.MoveToConfluence:
+                sb.AppendLine($"            <li><strong>ERROR:</strong> Invalid content disposition for core specification artifact: <code>{artifact.ContentDisposition.ToString()}</code>!</li>");
+                break;
+            default:
+                break;
+        }
+
+        //sb.AppendLine("        </ac:task-list>");
+        sb.AppendLine("        </ul>");
+
+
+        return sb.ToString();
+    }
+
+    private void addTasksForDispoRemove(
+        StringBuilder sb,
+        ArtifactRecord artifact,
+        CgDbStructure structure,
+        HashSet<string> pageTaskIds)
+    {
+        if (artifact.DispositionVotedByWorkgroup != true)
+        {
+            sb.AppendLine("            <li>Confirm workgroup disposition vote has been recorded and sent to FMG!</li>");
+        }
+
+        if (artifact.ReadyForRemoval != true)
+        {
+            sb.AppendLine("            <li>Prepare content for removal from core specification</li>");
+            sb.AppendLine("            <li>Confirm content is ready for removal from core specification and notify FMG</li>");
+        }
+    }
+
+    private void addTasksForDispoMoveToGuide(
+        StringBuilder sb,
+        ArtifactRecord artifact,
+        CgDbStructure structure,
+        HashSet<string> pageTaskIds)
+    {
+        if (artifact.DispositionVotedByWorkgroup != true)
+        {
+            sb.AppendLine("            <li>Confirm workgroup disposition vote has been recorded and sent to FMG!</li>");
+        }
+
+        if (string.IsNullOrEmpty(artifact.DispositionLocation))
+        {
+            sb.AppendLine("            <li>Specify location for relocation of content to external guide</li>");
+        }
+
+        if (artifact.ReadyForRemoval != true)
+        {
+            sb.AppendLine("            <li>Prepare content for relocation to external guide</li>");
+            sb.AppendLine("            <li>Confirm content is ready for removal from core specification and notify FMG</li>");
+        }
+    }
+
+    private void addTasksForDispoUnknown(
+        StringBuilder sb,
+        ArtifactRecord artifact,
+        CgDbStructure structure,
+        HashSet<string> pageTaskIds)
+    {
+        sb.AppendLine("            <li>Vote on and report content disposition to FMG: Core as Normative, Relocate, or Remove</li>");
+        sb.AppendLine("            <p>Note that the following list will be based on remaining in Core as Normative.");
+
+        addTasksForDispoCoreNormative(sb, artifact, structure, pageTaskIds);
+    }
+
+    private void addTasksForDispoCoreNormative(
+        StringBuilder sb,
+        ArtifactRecord artifact,
+        CgDbStructure structure,
+        HashSet<string> pageTaskIds)
+    {
+        if (artifact.DispositionVotedByWorkgroup != true)
+        {
+            sb.AppendLine("            <li>Confirm workgroup disposition vote has been recorded and sent to FMG!</li>");
+        }
+
+        // find elements flagged as trial-use - filter separately to catpure issues with casing and hyphenation
+        List<CgDbElement> elements = CgDbElement.SelectList(
+                _ciDb,
+                StructureKey: structure.Key,
+                IsInherited: false,
+                orderByProperties: [nameof(CgDbElement.ResourceFieldOrder)])
+            .Where(e => e.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) ?? false)
+            .ToList();
+
+        foreach (CgDbElement element in elements)
+        {
+            sb.AppendLine($"            <li>Element: <code>{element.Id}</code> flagged as <code>trial-use</code></li>");
+        }
+
+        // find elements flagged as deprecated
+        elements = CgDbElement.SelectList(
+                _ciDb,
+                StructureKey: structure.Key,
+                IsInherited: false,
+                orderByProperties: [nameof(CgDbElement.ResourceFieldOrder)])
+            .Where(e => e.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true)
+            .ToList();
+
+        foreach (CgDbElement element in elements)
+        {
+            sb.AppendLine($"            <li>Element: <code>{element.Id}</code> flagged as <code>deprecated</code></li>");
+        }
+
+        // review ValueSets and CodeSystems based bindings
+        elements = CgDbElement.SelectList(
+                _ciDb,
+                StructureKey: structure.Key,
+                IsInherited: false,
+                BindingValueSetKeyIsNull: false,
+                orderByProperties: [nameof(CgDbElement.ResourceFieldOrder)]);
+
+        HashSet<int> reviewedVsKeys = [];
+        foreach (CgDbElement element in elements)
+        {
+            if ((element.BindingValueSetKey is null) ||
+                reviewedVsKeys.Contains(element.BindingValueSetKey.Value))
+            {
+                continue;
+            }
+
+            // resolve the ValueSet
+            CgDbValueSet? valueSet = CgDbValueSet.SelectSingle(
+                _ciDb,
+                Key: element.BindingValueSetKey.Value);
+
+            if (valueSet is null)
+            {
+                continue;
+            }
+
+            if (valueSet.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> is flagged as <code>trial-use</code></li>");
+            }
+
+            if (valueSet.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> is flagged as <code>informative</code></li>");
+            }
+
+            if (valueSet.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> is flagged as <code>deprecated</code></li>");
+            }
+
+            if (valueSet.IsExperimental == true)
+            {
+                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> is flagged as <code>experimental</code></li>");
+            }
+
+            string[] systems = valueSet.ReferencedSystems?.Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+            foreach (string system in systems)
+            {
+                // resolve the CodeSystem
+                CgDbCodeSystem? codeSystem = system.Contains('|')
+                    ? CgDbCodeSystem.SelectSingle(_ciDb, VersionedUrl: system)
+                    : CgDbCodeSystem.SelectSingle(_ciDb, UnversionedUrl: system);
+                if (codeSystem is null)
+                {
+                    continue;
+                }
+
+                if (codeSystem.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> is flagged as <code>trial-use</code></li>");
+                }
+
+                if (codeSystem.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> is flagged as <code>informative</code></li>");
+                }
+
+                if (codeSystem.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> is flagged as <code>deprecated</code></li>");
+                }
+
+                if (codeSystem.IsExperimental == true)
+                {
+                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> is flagged as <code>experimental</code></li>");
+                }
+            }
+        }
+
+        // find operations flagged as trial use
+        List<CgDbOperation> operations = CgDbOperation.SelectList(_ciDb)
+            .Where(op => op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) &&
+                        (op.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
+            .ToList();
+
+        foreach (CgDbOperation operation in operations)
+        {
+            sb.AppendLine($"            <li>Operation: <code>{operation.Id}</code> ({operation.Name}) flagged as <code>trial-use</code></li>");
+        }
+
+        // find operations flagged as deprecated
+        operations = CgDbOperation.SelectList(_ciDb)
+            .Where(op => op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) &&
+                        (op.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
+            .ToList();
+
+        foreach (CgDbOperation operation in operations)
+        {
+            sb.AppendLine($"            <li>Operation: <code>{operation.Id}</code> ({operation.Name}) flagged as <code>deprecated</code></li>");
+        }
+
+        // find operations flagged as experimental
+        operations = CgDbOperation.SelectList(_ciDb, IsExperimental: true)
+            .Where(op => op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        foreach (CgDbOperation operation in operations)
+        {
+            sb.AppendLine($"            <li>Operation: <code>{operation.Id}</code> ({operation.Name}) flagged as <code>experimental</code></li>");
+        }
+
+        // find search parameters flagged as trial use
+        List<CgDbSearchParameter> searchParameters = CgDbSearchParameter.SelectList(_ciDb)
+            .Where(sp => sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) &&
+                        (sp.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
+            .ToList();
+
+        foreach (CgDbSearchParameter sp in searchParameters)
+        {
+            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) flagged as <code>trial-use</code></li>");
+        }
+
+        // find search parameters flagged as deprecated
+        searchParameters = CgDbSearchParameter.SelectList(_ciDb)
+            .Where(sp => sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) &&
+                        (sp.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
+            .ToList();
+
+        foreach (CgDbSearchParameter sp in searchParameters)
+        {
+            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) flagged as <code>deprecated</code></li>");
+        }
+
+        // find search parameters flagged as experimental
+        searchParameters = CgDbSearchParameter.SelectList(_ciDb, IsExperimental: true)
+            .Where(sp => sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        foreach (CgDbSearchParameter sp in searchParameters)
+        {
+            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) flagged as <code>experimental</code></li>");
+        }
+    }
+
+    private string generateTaskId(HashSet<string> pageTaskIds)
+    {
+        long seed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        string id = seed.ToString();
+
+        while (pageTaskIds.Contains(id))
+        {
+            seed++;
+            id = seed.ToString();
+        }
+
+        return id;
+    }
+
+    private string getStructureSearchParameterContent(ArtifactRecord artifact, CgDbStructure structure)
+    {
+        StringBuilder sb = new StringBuilder();
+
+        // get the searchParameters from the structure
+        List<CgDbSearchParameter> searchParameters = CgDbSearchParameter.SelectList(_ciDb)
+                .Where(sp => sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+        if (searchParameters.Count == 0)
+        {
+            sb.AppendLine("<p>No search parameters found.</p>");
+        }
+        else
+        {
+            sb.AppendLine("<table>");
+            sb.AppendLine("    <thead>");
+            sb.AppendLine("        <tr>");
+            sb.AppendLine("            <th>Id</th>");
+            sb.AppendLine("            <th>Name</th>");
+            sb.AppendLine("            <th>Publication Status</th>");
+            sb.AppendLine("            <th>FMM</th>");
+            sb.AppendLine("            <th>Standards Status</th>");
+            sb.AppendLine("            <th>IsExperimental</th>");
+            sb.AppendLine("            <th>WorkGroup</th>");
+            sb.AppendLine("            <th>Search Type</th>");
+            sb.AppendLine("            <th>Description</th>");
+            sb.AppendLine("        </tr>");
+            sb.AppendLine("    </thead>");
+            sb.AppendLine("    <tbody>");
+
+            foreach (CgDbSearchParameter sp in searchParameters)
+            {
+                sb.AppendLine("        <tr>");
+                sb.AppendLine($"            <td><code>{sp.Id}</code></td>");
+                sb.AppendLine($"            <td><code>{sp.Name}</code></td>");
+                sb.AppendLine($"            <td>{sp.Status}</td>");
+                sb.AppendLine($"            <td>{sp.FhirMaturity}</td>");
+                sb.AppendLine($"            <td>{sp.StandardStatus}</td>");
+                sb.AppendLine($"            <td>{sp.IsExperimental}</td>");
+                sb.AppendLine($"            <td>{sp.WorkGroup}</td>");
+                sb.AppendLine($"            <td>{sp.SearchType}</td>");
+                sb.AppendLine($"            <td>{sp.Description}</td>");
+                sb.AppendLine("        </tr>");
+            }
+
+            sb.AppendLine("    </tbody>");
+            sb.AppendLine("</table>");
+        }
+
+        return sb.ToString();
+    }
+
+    private string getStructureOperationContent(ArtifactRecord artifact, CgDbStructure structure)
+    {
+        StringBuilder sb = new StringBuilder();
+
+        // get the searchParameters from the structure
+        List<CgDbOperation> operations = CgDbOperation.SelectList(_ciDb)
+                .Where(op => op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+        if (operations.Count == 0)
+        {
+            sb.AppendLine("<p>No operations found.</p>");
+        }
+        else
+        {
+            sb.AppendLine("<table>");
+            sb.AppendLine("    <thead>");
+            sb.AppendLine("        <tr>");
+            sb.AppendLine("            <th>Id</th>");
+            sb.AppendLine("            <th>Name</th>");
+            sb.AppendLine("            <th>Publication Status</th>");
+            sb.AppendLine("            <th>FMM</th>");
+            sb.AppendLine("            <th>Standards Status</th>");
+            sb.AppendLine("            <th>IsExperimental</th>");
+            sb.AppendLine("            <th>Workgroup</th>");
+            sb.AppendLine("            <th>Description</th>");
+            sb.AppendLine("        </tr>");
+            sb.AppendLine("    </thead>");
+            sb.AppendLine("    <tbody>");
+
+            foreach (CgDbOperation operation in operations)
+            {
+                sb.AppendLine("        <tr>");
+                sb.AppendLine($"            <td><code>{operation.Id}</code></td>");
+                sb.AppendLine($"            <td><code>{operation.Name}</code></td>");
+                sb.AppendLine($"            <td>{operation.Status}</td>");
+                sb.AppendLine($"            <td>{operation.FhirMaturity}</td>");
+                sb.AppendLine($"            <td>{operation.StandardStatus}</td>");
+                sb.AppendLine($"            <td>{operation.IsExperimental}</td>");
+                sb.AppendLine($"            <td>{operation.WorkGroup}</td>");
+                sb.AppendLine($"            <td>{operation.Description}</td>");
+                sb.AppendLine("        </tr>");
+            }
+
+            sb.AppendLine("    </tbody>");
+            sb.AppendLine("</table>");
+        }
+
+        return sb.ToString();
     }
 
     private void generatePageContent()
@@ -549,7 +1001,14 @@ public class ConfluenceGenerator
 
         if (_config.LocalExportDir is not null)
         {
+            string filename = $"page_{pageName}.html";
             writeToFile($"page_{pageName}.html", content, Path.Combine(_config.LocalExportDir, wgCode));
+            if (!_writtenPages.TryGetValue(wgCode, out List<(string title, string relativeLink)>? wgPageList))
+            {
+                wgPageList = [];
+                _writtenPages[wgCode] = wgPageList;
+            }
+            wgPageList.Add(("Page: " + pageName, Path.Combine(wgCode, filename)));
         }
 
         //if ((_config.ConfluenceBaseUrl is not null) &&
@@ -690,8 +1149,16 @@ public class ConfluenceGenerator
 
         if (_config.LocalExportDir is not null)
         {
-            writeToFile($"{wgCode}-root-page.html", content);
+            string filename = $"{wgCode}-root-page.html";
+            writeToFile(filename, content);
             string wgDir = Path.Combine(_config.LocalExportDir, wgCode);
+            if (!_writtenPages.TryGetValue(wgCode, out List<(string title, string relativeLink)>? wgPageList))
+            {
+                wgPageList = [];
+                _writtenPages[wgCode] = wgPageList;
+            }
+            wgPageList.Add(($" Work Group Listing: {wgCode} - {wgTitle}", filename));
+
             if (!Directory.Exists(wgDir))
             {
                 Directory.CreateDirectory(wgDir);

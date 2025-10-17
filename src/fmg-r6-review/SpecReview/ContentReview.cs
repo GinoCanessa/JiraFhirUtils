@@ -541,6 +541,34 @@ public class ContentReview
 
         ArtifactRecord modified = artifact with { };
 
+        // if this artifact has an unknown disposition, check if there is an FMG value
+        if (modified.ContentDisposition == ContentDispositionCodes.Unknown)
+        {
+            FmgSheetContentRecord? fmgRec = FmgSheetContentRecord.SelectSingle(
+                _db,
+                Name: modified.Name);
+
+            if (fmgRec is not null)
+            {
+                // check current disposition
+                switch (fmgRec.Track?.ToLowerInvariant())
+                {
+                    case "n":
+                        modified.ContentDisposition = ContentDispositionCodes.CoreAsNormative;
+                        modified.DispositionVotedByWorkgroup = !string.IsNullOrWhiteSpace(fmgRec.VotedByWorkgroup);
+                        break;
+
+                    case "ar":
+                        modified.ContentDisposition = ContentDispositionCodes.MoveToGuide;
+                        modified.DispositionVotedByWorkgroup = !string.IsNullOrWhiteSpace(fmgRec.VotedByWorkgroup);
+                        modified.DispositionLocation = fmgRec.Target;
+                        break;
+                }
+
+                modified.ManagementComments = fmgRec.Notes;
+            }
+        }
+
         (string? expectedDir, string? expectedDefinitionFile) = getExpectedLocations(modified, structure);
 
         if (expectedDir is null)
@@ -1771,8 +1799,9 @@ public class ContentReview
         {
             return string.Empty;
         }
+
         // simple regex to remove HTML tags
-        return _htmlStripRegex.Replace(text, string.Empty);
+        return _htmlStripRegex.Replace(text, " ");
     }
 
     private static (string clean, char firstLetter, char? prefixSymbol) sanitizeAsKeyword(string? text)

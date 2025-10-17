@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using JiraFhirUtils.SQLiteGenerator;
 
@@ -50,6 +51,7 @@ public partial record class SpecPageRecord
     public string? StandardsStatus { get; set; } = null;
 
     public ContentDispositionCodes ContentDisposition { get; set; } = ContentDispositionCodes.Unknown;
+    public bool? DispositionVotedByWorkgroup { get; set; } = null;
     public string? DispositionLocation { get; set; } = null;
 
     public bool? ReadyForRemoval { get; set; } = null;
@@ -163,6 +165,7 @@ public partial record class ArtifactRecord
     public string? StandardsStatus { get; set; } = null;
 
     public ContentDispositionCodes ContentDisposition { get; set; } = ContentDispositionCodes.Unknown;
+    public bool? DispositionVotedByWorkgroup { get; set; } = null;
     public string? DispositionLocation { get; set; } = null;
 
     public bool? ReadyForRemoval { get; set; } = null;
@@ -173,4 +176,48 @@ public partial record class ArtifactRecord
 
     public string? IntroPageFilename { get; set; } = null;
     public string? NotesPageFilename { get; set; } = null;
+}
+
+[JfSQLiteTable("fmg_feedback_sheet")]
+[JfSQLiteIndex(nameof(Name))]
+public partial record class FmgSheetContentRecord
+{
+    public enum TrackCodes
+    {
+        Unknown = 0,
+        Normative = 1,
+        Informative = 2,
+        MoveOutOfCore = 3,
+    }
+
+    [JfSQLiteKey]
+    public int Id { get; set; } = -1;
+
+    [JfSQLiteUnique]
+    [JsonPropertyName("Resource")]
+    public required string Name { get; set; }
+
+    [JsonPropertyName("WG")]
+    public string? WorkGroupCode { get; set; } = null;
+
+    [JsonPropertyName("FMG Recommendation")]
+    public string? FmgRecommendation { get; set; } = null;
+
+    [JsonPropertyName("Track")]
+    public string? Track { get; set; } = null;
+
+    [JsonPropertyName("VotedByWg")]
+    public string? VotedByWorkgroup { get; set; } = null;
+
+    [JsonPropertyName("WG to FMG")]
+    public string? WgToFmg { get; set; } = null;
+
+    [JsonPropertyName("Vote")]
+    public string? Vote { get; set; } = null;
+
+    [JsonPropertyName("Notes")]
+    public string? Notes { get; set; } = null;
+
+    [JsonPropertyName("Target")]
+    public string? Target { get; set; } = null;
 }
