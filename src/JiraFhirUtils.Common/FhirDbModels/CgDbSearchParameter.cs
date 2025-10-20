@@ -60,6 +60,27 @@ public partial class CgDbSearchParameter : CgDbMetadataResourceBase
                 .ToList();
         }
     }
+    public required string? AdditionalBaseResources { get; set; }
+    [JfSQLiteIgnore]
+    public List<string> AdditionalBaseResourceList
+    {
+        set
+        {
+            AdditionalBaseResources = (value == null || value.Count == 0) ? null : string.Join(',', value);
+        }
+        get
+        {
+            if (string.IsNullOrEmpty(AdditionalBaseResources))
+            {
+                return [];
+            }
+            return AdditionalBaseResources
+                .Split(',')
+                .Select(v => v.Trim())
+                .Where(v => !string.IsNullOrEmpty(v))
+                .ToList();
+        }
+    }
 
     public required string? SearchType { get; set; }
     public required string? Expression { get; set; }

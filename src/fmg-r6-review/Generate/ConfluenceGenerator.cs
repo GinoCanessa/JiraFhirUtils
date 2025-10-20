@@ -690,7 +690,10 @@ public class ConfluenceGenerator
 
         // get the searchParameters from the structure
         List<CgDbSearchParameter> searchParameters = CgDbSearchParameter.SelectList(_ciDb)
-                .Where(sp => sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)))
+                .Where(sp => 
+                    sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase) ||
+                    sp.AdditionalBaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase) ||
+                    sp.Id.StartsWith(structure.Id, StringComparison.Ordinal))))
                 .ToList();
 
         if (searchParameters.Count == 0)
