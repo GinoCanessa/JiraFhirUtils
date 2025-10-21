@@ -2013,13 +2013,8 @@ public class WorkGroupLoader
         using Microsoft.Data.Sqlite.SqliteConnection db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_config.DbPath}");
         db.Open();
 
-        if (_config.DropTables)
-        {
-            FmgSheetContentRecord.DropTable(db);
-        }
-
+        FmgSheetContentRecord.DropTable(db);
         FmgSheetContentRecord.CreateTable(db);
-
         records.Insert(db);
     }
 

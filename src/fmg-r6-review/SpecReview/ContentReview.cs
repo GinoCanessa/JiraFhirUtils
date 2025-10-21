@@ -11,8 +11,10 @@ using System.Data;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace fmg_r6_review.SpecReview;
 
@@ -435,6 +437,32 @@ public class ContentReview
         return words.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    private bool _haveDroppedTables = false;
+    private void checkTables(IDbConnection db)
+    {
+        if (_haveDroppedTables)
+        {
+            return;
+        }
+        
+        if (_config.DropTables)
+        {
+            ArtifactRecord.DropTable(db);
+            SpecPageRecord.DropTable(db);
+            SpecPageImageRecord.DropTable(db);
+            SpecPageRemovedFhirArtifactRecord.DropTable(db);
+            SpecPageUnknownWordRecord.DropTable(db);
+        }
+
+        ArtifactRecord.CreateTable(db);
+        SpecPageRecord.CreateTable(db);
+        SpecPageImageRecord.CreateTable(db);
+        SpecPageRemovedFhirArtifactRecord.CreateTable(db);
+        SpecPageUnknownWordRecord.CreateTable(db);
+        
+        _haveDroppedTables = true;
+    }
+    
     public void ProcessArtifacts()
     {
         if (!_haveCiDb)
@@ -461,17 +489,8 @@ public class ContentReview
         ciDb.Open();
         _ciDb = ciDb;
 
-        // ensure our tables exist
-        if (_config.DropTables)
-        {
-            ArtifactRecord.DropTable(_db);
-
-            SpecPageRecord.Delete(_db, ArtifactIdIsNull: false);
-            cleanDeletedPageRecords();
-        }
-
-        ArtifactRecord.CreateTable(_db);
-        SpecPageRecord.CreateTable(_db);
+        // make sure our tables exist
+        checkTables(db);
 
         // load the initial set of resources we are working with
         List<ArtifactRecord> artifacts = buildArtifactList();
@@ -776,19 +795,7 @@ public class ContentReview
 
         _db = db;
 
-        // ensure our tables exist
-        if (_config.DropTables)
-        {
-            SpecPageRecord.DropTable(_db);
-            SpecPageImageRecord.DropTable(_db);
-            SpecPageRemovedFhirArtifactRecord.DropTable(_db);
-            SpecPageUnknownWordRecord.DropTable(_db);
-        }
-
-        SpecPageRecord.CreateTable(_db);
-        SpecPageImageRecord.CreateTable(_db);
-        SpecPageRemovedFhirArtifactRecord.CreateTable(_db);
-        SpecPageUnknownWordRecord.CreateTable(_db);
+        checkTables(db);
 
         // load the initial set of pages we are working with
         List<SpecPageRecord> pages = buildSpecPageList();
@@ -845,8 +852,8 @@ public class ContentReview
                 }
             }
 
-            //string visibleText = extractVisibleText(doc);
-            string visibleText = stripHtml(doc.Body?.TextContent ?? string.Empty);
+            string visibleText = extractVisibleText(doc);
+            //string visibleText = stripHtml(doc.Body?.TextContent ?? string.Empty);
 
             int footerLoc = visibleText.IndexOf("[%file newfooter%]", StringComparison.Ordinal);
             if (footerLoc != -1)
@@ -1621,31 +1628,60 @@ public class ContentReview
     private static string extractVisibleText(IDocument doc)
     {
         StringBuilder sb = new();
-        foreach (INode node in doc.Body?.Descendants() ?? Enumerable.Empty<INode>())
+
+        foreach (INode node in doc.Body?.Children ?? Enumerable.Empty<INode>())
         {
-            if (node is IElement el)
-            {
-                if (el.TagName is "SCRIPT" or "STYLE" or "NAV" or "HEADER" or "FOOTER")
-                {
-                    // skip subtree
-                    continue;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(node.TextContent))
-            {
-                string text = normalizeWhitespace(node.TextContent);
-                if (text.Length > 0)
-                {
-                    sb.Append(text);
-                    sb.Append('\n');
-                }
-            }
+            addNodeText(node, sb);
         }
-
+        
         return stripHtml(sb.ToString());
+        
+        // foreach (INode node in doc.Body?.Descendants() ?? Enumerable.Empty<INode>())
+        // {
+        //     if (node is IElement el)
+        //     {
+        //         if (el.TagName is "SCRIPT" or "STYLE" or "NAV" or "HEADER" or "FOOTER")
+        //         {
+        //             // skip subtree
+        //             continue;
+        //         }
+        //     }
+        //
+        //     if (!string.IsNullOrEmpty(node.TextContent))
+        //     {
+        //         string text = normalizeWhitespace(node.TextContent);
+        //         if (text.Length > 0)
+        //         {
+        //             sb.Append(text);
+        //             sb.Append('\n');
+        //         }
+        //     }
+        // }
+        //
+        // return buildString ? stripHtml(sb.ToString()) : null;
     }
 
+    private static void addNodeText(INode node, StringBuilder sb)
+    {
+        if (node is IElement { TagName: "SCRIPT" or "STYLE" or "NAV" or "HEADER" or "FOOTER" })
+        {
+            // skip subtree
+            return;
+        }
+
+        if (node.HasChildNodes)
+        {
+            foreach (INode child in node.ChildNodes ?? Enumerable.Empty<INode>())
+            {
+                addNodeText(child, sb);
+            }
+
+            return;
+        }
+        
+        sb.AppendLine(HttpUtility.UrlDecode(node.TextContent));
+    }
+    
     private static string normalizeWhitespace(string input)
     {
         if (string.IsNullOrWhiteSpace(input))

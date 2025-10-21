@@ -156,7 +156,7 @@ public class ConfluenceGenerator
     private void generateArtifactContent()
     {
         // get the artifacts from the database
-        List<ArtifactRecord> artifacts = ArtifactRecord.SelectList(_db);
+        List<ArtifactRecord> artifacts = ArtifactRecord.SelectList(_db, orderByProperties:[nameof(ArtifactRecord.Id)]);
 
         // iterate over artifacts and create the confluence content
         foreach (ArtifactRecord artifact in artifacts)
@@ -551,24 +551,21 @@ public class ConfluenceGenerator
                 continue;
             }
 
-            if (valueSet.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true)
+            if (valueSet.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true)
             {
-                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> is flagged as <code>trial-use</code></li>");
+                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has status <code>{valueSet.Status}</code></li>");
             }
-
-            if (valueSet.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true)
+            
+            if ((valueSet.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true) ||
+                (valueSet.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true) ||
+                (valueSet.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
             {
-                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> is flagged as <code>informative</code></li>");
-            }
-
-            if (valueSet.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> is flagged as <code>deprecated</code></li>");
+                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has standard status <code>{valueSet.StandardStatus}</code></li>");
             }
 
             if (valueSet.IsExperimental == true)
             {
-                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> is flagged as <code>experimental</code></li>");
+                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) is flagged as <code>experimental</code></li>");
             }
 
             string[] systems = valueSet.ReferencedSystems?.Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
@@ -583,88 +580,85 @@ public class ConfluenceGenerator
                     continue;
                 }
 
-                if (codeSystem.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true)
+                if (codeSystem.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true)
                 {
-                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> is flagged as <code>trial-use</code></li>");
+                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has status <code>{codeSystem.Status}</code></li>");
                 }
 
-                if (codeSystem.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true)
+                if ((codeSystem.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true) ||
+                    (codeSystem.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true) ||
+                    (codeSystem.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
                 {
-                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> is flagged as <code>informative</code></li>");
-                }
-
-                if (codeSystem.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> is flagged as <code>deprecated</code></li>");
+                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has standard status <code>{codeSystem.StandardStatus}</code></li>");
                 }
 
                 if (codeSystem.IsExperimental == true)
                 {
-                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> is flagged as <code>experimental</code></li>");
+                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) is flagged as <code>experimental</code></li>");
                 }
             }
         }
 
-        // find operations flagged as trial use
-        List<CgDbOperation> operations = CgDbOperation.SelectList(_ciDb)
-            .Where(op => op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) &&
-                        (op.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
+        // get all operations for this resource
+        List<CgDbOperation> operations = CgDbOperation.SelectList(_ciDb, orderByProperties:[nameof(CgDbOperation.Id)])
+            .Where(op => 
+                op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) ||
+                op.AdditionalResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) ||
+                op.Id.StartsWith(structure.Id + "-", StringComparison.OrdinalIgnoreCase))
             .ToList();
-
-        foreach (CgDbOperation operation in operations)
+        
+        // find operations in status draft
+        foreach (CgDbOperation op in operations.Where(op => op.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true))
         {
-            sb.AppendLine($"            <li>Operation: <code>{operation.Id}</code> ({operation.Name}) flagged as <code>trial-use</code></li>");
+            sb.AppendLine($"            <li>Operation: <code>{op.Id}</code> ({op.Name}) has status of <code>{op.Status}</code></li>");
         }
 
-        // find operations flagged as deprecated
-        operations = CgDbOperation.SelectList(_ciDb)
-            .Where(op => op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) &&
-                        (op.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
-            .ToList();
-
-        foreach (CgDbOperation operation in operations)
+        // find operations flagged as trial use
+        foreach (CgDbOperation operation in operations.Where(op => op.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
         {
-            sb.AppendLine($"            <li>Operation: <code>{operation.Id}</code> ({operation.Name}) flagged as <code>deprecated</code></li>");
+            sb.AppendLine($"            <li>Operation: <code>{operation.Id}</code> ({operation.Name}) has standards status <code>{operation.StandardStatus}</code></li>");
+        }
+        
+        // find operations flagged as deprecated
+        foreach (CgDbOperation op in operations.Where(op => op.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
+        {
+            sb.AppendLine($"            <li>Operation: <code>{op.Id}</code> ({op.Name}) has standards status <code>{op.StandardStatus}</code></li>");
         }
 
         // find operations flagged as experimental
-        operations = CgDbOperation.SelectList(_ciDb, IsExperimental: true)
-            .Where(op => op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
-
-        foreach (CgDbOperation operation in operations)
+        foreach (CgDbOperation op in operations.Where(op => op.IsExperimental == true))
         {
-            sb.AppendLine($"            <li>Operation: <code>{operation.Id}</code> ({operation.Name}) flagged as <code>experimental</code></li>");
+            sb.AppendLine($"            <li>Operation: <code>{op.Id}</code> ({op.Name}) flagged as <code>experimental</code></li>");
         }
 
-        // find search parameters flagged as trial use
-        List<CgDbSearchParameter> searchParameters = CgDbSearchParameter.SelectList(_ciDb)
-            .Where(sp => sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) &&
-                        (sp.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
+        // get all search parameters for this resource
+        List<CgDbSearchParameter> searchParameters = CgDbSearchParameter.SelectList(_ciDb, orderByProperties:[nameof(CgDbSearchParameter.Id)])
+            .Where(sp => 
+                sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) ||
+                sp.AdditionalBaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) ||
+                sp.Id.StartsWith(structure.Id + "-", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        foreach (CgDbSearchParameter sp in searchParameters)
+        // find search parameters in draft
+        foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true))
         {
-            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) flagged as <code>trial-use</code></li>");
+            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) has status <code>{sp.Status}</code></li>");
+        }
+        
+        // find search parameters flagged as trial use
+        foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
+        {
+            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) has standards status <code>{sp.StandardStatus}</code></li>");
         }
 
         // find search parameters flagged as deprecated
-        searchParameters = CgDbSearchParameter.SelectList(_ciDb)
-            .Where(sp => sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)) &&
-                        (sp.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
-            .ToList();
-
-        foreach (CgDbSearchParameter sp in searchParameters)
+        foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
         {
-            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) flagged as <code>deprecated</code></li>");
+            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) has standards status <code>{sp.StandardStatus}</code></li>");
         }
 
         // find search parameters flagged as experimental
-        searchParameters = CgDbSearchParameter.SelectList(_ciDb, IsExperimental: true)
-            .Where(sp => sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
-
-        foreach (CgDbSearchParameter sp in searchParameters)
+        foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.IsExperimental == true))
         {
             sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) flagged as <code>experimental</code></li>");
         }
@@ -689,11 +683,11 @@ public class ConfluenceGenerator
         StringBuilder sb = new StringBuilder();
 
         // get the searchParameters from the structure
-        List<CgDbSearchParameter> searchParameters = CgDbSearchParameter.SelectList(_ciDb)
+        List<CgDbSearchParameter> searchParameters = CgDbSearchParameter.SelectList(_ciDb, orderByProperties:[nameof(CgDbSearchParameter.Id)])
                 .Where(sp => 
                     sp.BaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase) ||
                     sp.AdditionalBaseResourceList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase) ||
-                    sp.Id.StartsWith(structure.Id, StringComparison.Ordinal))))
+                    sp.Id.StartsWith(structure.Id + "-", StringComparison.Ordinal))))
                 .ToList();
 
         if (searchParameters.Count == 0)
@@ -745,8 +739,11 @@ public class ConfluenceGenerator
         StringBuilder sb = new StringBuilder();
 
         // get the searchParameters from the structure
-        List<CgDbOperation> operations = CgDbOperation.SelectList(_ciDb)
-                .Where(op => op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase)))
+        List<CgDbOperation> operations = CgDbOperation.SelectList(_ciDb, orderByProperties:[nameof(CgDbOperation.Id)])
+                .Where(op => 
+                    op.ResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase) ||
+                    op.AdditionalResourceTypeList.Any(r => r.Equals(structure.Name, StringComparison.OrdinalIgnoreCase) ||
+                    op.Id.StartsWith(structure.Id + "-", StringComparison.Ordinal))))
                 .ToList();
 
         if (operations.Count == 0)
@@ -808,9 +805,9 @@ public class ConfluenceGenerator
         string wgCode = page.ResponsibleWorkGroup ?? _missingWgCode;
 
         // resolve related lists
-        List<SpecPageRemovedFhirArtifactRecord> removedFhirArtifactRecords = SpecPageRemovedFhirArtifactRecord.SelectList(_db, PageId: page.Id);
-        List<SpecPageUnknownWordRecord> unknownWordRecords = SpecPageUnknownWordRecord.SelectList(_db, PageId: page.Id);
-        List<SpecPageImageRecord> imgIssueRecords = SpecPageImageRecord.SelectList(_db, PageId: page.Id);
+        List<SpecPageRemovedFhirArtifactRecord> removedFhirArtifactRecords = SpecPageRemovedFhirArtifactRecord.SelectList(_db, PageId: page.Id, orderByProperties:[nameof(SpecPageRemovedFhirArtifactRecord.Word)]);
+        List<SpecPageUnknownWordRecord> unknownWordRecords = SpecPageUnknownWordRecord.SelectList(_db, PageId: page.Id, orderByProperties:[nameof(SpecPageUnknownWordRecord.Word)]);
+        List<SpecPageImageRecord> imgIssueRecords = SpecPageImageRecord.SelectList(_db, PageId: page.Id, orderByProperties:[nameof(SpecPageImageRecord.Source)]);
 
         string content = $$$"""
                     <h3>General Information:</h3>
@@ -1040,7 +1037,7 @@ public class ConfluenceGenerator
     private void generateWorkgroupRootPages()
     {
         // get the workgroups
-        List<WorkgroupRecord> workgroups = WorkgroupRecord.SelectList(_db);
+        List<WorkgroupRecord> workgroups = WorkgroupRecord.SelectList(_db, orderByProperties: [nameof(WorkgroupRecord.Code)]);
 
         // iterate over workgroups and create the confluence content
         foreach (WorkgroupRecord workgroup in workgroups)
@@ -1059,13 +1056,13 @@ public class ConfluenceGenerator
 
         // build the list of pages for this workgroup
         List<SpecPageRecord> pages = workgroup is null
-            ? SpecPageRecord.SelectList(_db, ResponsibleWorkGroupIsNull: true, ArtifactIdIsNull: true)
-            : SpecPageRecord.SelectList(_db, ResponsibleWorkGroup: workgroup.Code, ArtifactIdIsNull: true);
+            ? SpecPageRecord.SelectList(_db, ResponsibleWorkGroupIsNull: true, ArtifactIdIsNull: true, orderByProperties:[nameof(SpecPageRecord.PageFileName)])
+            : SpecPageRecord.SelectList(_db, ResponsibleWorkGroup: workgroup.Code, ArtifactIdIsNull: true, orderByProperties:[nameof(SpecPageRecord.PageFileName)]);
 
         // build the list of artifacts for this workgroup
         List<ArtifactRecord> artifacts = workgroup is null
-            ? ArtifactRecord.SelectList(_db, ResponsibleWorkGroupIsNull: true)
-            : ArtifactRecord.SelectList(_db, ResponsibleWorkGroup: workgroup.Code);
+            ? ArtifactRecord.SelectList(_db, ResponsibleWorkGroupIsNull: true, orderByProperties:[nameof(ArtifactRecord.Id)])
+            : ArtifactRecord.SelectList(_db, ResponsibleWorkGroup: workgroup.Code, orderByProperties:[nameof(ArtifactRecord.Id)]);
 
         // if there are no pages or artifacts, skip this workgroup
         if ((pages.Count == 0) &&
