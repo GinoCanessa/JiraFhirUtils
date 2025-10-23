@@ -92,10 +92,14 @@ public class ConfluenceGenerator
 
     public void Generate()
     {
+        Console.WriteLine($"Using FMG Review Database: {_config.DbPath}...");
+        
         using IDbConnection db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_config.DbPath}");
         db.Open();
         _db = db;
 
+        Console.WriteLine($"Using FHIR CI Database: {_config.FhirDatabaseCi}...");
+        
         using IDbConnection? ciDb = (!string.IsNullOrEmpty(_config.FhirDatabaseCi) && File.Exists(_config.FhirDatabaseCi)) ?
             new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_config.FhirDatabaseCi}") :
             null;
@@ -390,6 +394,14 @@ public class ConfluenceGenerator
         //}
     }
 
+    private string getPageUrgentChecklist(
+        SpecPageRecord page,
+        HashSet<string> pageTaskIds)
+    {
+        // TO DO: need to build list of urgent tasks for pages (e.g., informative pages need conformance language removed)
+        return string.Empty;
+    }
+
     private string getStructureUrgentChecklist(
         ArtifactRecord artifact, 
         CgDbStructure structure,
@@ -496,7 +508,7 @@ public class ConfluenceGenerator
             sb.AppendLine("            <li>Confirm workgroup disposition vote has been recorded and sent to FMG!</li>");
         }
 
-        // find elements flagged as trial-use - filter separately to catpure issues with casing and hyphenation
+        // find elements flagged as trial-use - filter separately to capture issues with casing and hyphenation
         List<CgDbElement> elements = CgDbElement.SelectList(
                 _ciDb,
                 StructureKey: structure.Key,
@@ -532,11 +544,12 @@ public class ConfluenceGenerator
                 BindingValueSetKeyIsNull: false,
                 orderByProperties: [nameof(CgDbElement.ResourceFieldOrder)]);
 
-        HashSet<int> reviewedVsKeys = [];
+        HashSet<int> processedValueSetKeys = [];
+        HashSet<int> processedCodeSystemKeys = [];
         foreach (CgDbElement element in elements)
         {
             if ((element.BindingValueSetKey is null) ||
-                reviewedVsKeys.Contains(element.BindingValueSetKey.Value))
+                !processedValueSetKeys.Add(element.BindingValueSetKey.Value))
             {
                 continue;
             }
@@ -551,17 +564,17 @@ public class ConfluenceGenerator
                 continue;
             }
 
-            if (valueSet.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has status <code>{valueSet.Status}</code></li>");
-            }
+            // if (valueSet.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true)
+            // {
+            //     sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has status <code>{valueSet.Status}</code></li>");
+            // }
             
-            if ((valueSet.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true) ||
-                (valueSet.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true) ||
-                (valueSet.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
-            {
-                sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has standard status <code>{valueSet.StandardStatus}</code></li>");
-            }
+            // if ((valueSet.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true) ||
+            //     (valueSet.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true) ||
+            //     (valueSet.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
+            // {
+            //     sb.AppendLine($"            <li>ValueSet: <code>{valueSet.Id}</code> ({valueSet.Name}) bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has standard status <code>{valueSet.StandardStatus}</code></li>");
+            // }
 
             if (valueSet.IsExperimental == true)
             {
@@ -575,26 +588,63 @@ public class ConfluenceGenerator
                 CgDbCodeSystem? codeSystem = system.Contains('|')
                     ? CgDbCodeSystem.SelectSingle(_ciDb, VersionedUrl: system)
                     : CgDbCodeSystem.SelectSingle(_ciDb, UnversionedUrl: system);
-                if (codeSystem is null)
+                if ((codeSystem is null) ||
+                    !processedCodeSystemKeys.Add(codeSystem.Key))
                 {
                     continue;
                 }
 
-                if (codeSystem.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has status <code>{codeSystem.Status}</code></li>");
-                }
+                // if (codeSystem.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true)
+                // {
+                //     sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has status <code>{codeSystem.Status}</code></li>");
+                // }
 
-                if ((codeSystem.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true) ||
-                    (codeSystem.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true) ||
-                    (codeSystem.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
-                {
-                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has standard status <code>{codeSystem.StandardStatus}</code></li>");
-                }
+                // if ((codeSystem.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true) ||
+                //     (codeSystem.StandardStatus?.Equals("informative", StringComparison.OrdinalIgnoreCase) == true) ||
+                //     (codeSystem.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
+                // {
+                //     sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) has standard status <code>{codeSystem.StandardStatus}</code></li>");
+                // }
 
                 if (codeSystem.IsExperimental == true)
                 {
                     sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> (<code>{element.ValueSetBindingStrength}</code>) is flagged as <code>experimental</code></li>");
+                }
+                
+                // get the list of all value sets that reference this code system
+                List<CgDbValueSetSystem> vsSystems = CgDbValueSetSystem.SelectList(
+                    _ciDb,
+                    PackageKey: codeSystem.PackageKey,
+                    CodeSystemKey: codeSystem.Key);
+
+                bool hasCodeBinding = false;
+
+                // iterate over the value sets
+                foreach (CgDbValueSetSystem vsSystem in vsSystems)
+                {
+                    // resolve this value set
+                    CgDbValueSet? csVs = CgDbValueSet.SelectSingle(_ciDb, Key: vsSystem.ValueSetKey);
+
+                    if (csVs is null)
+                    {
+                        continue;
+                    }
+                    
+                    // check to see if there are NO code-type bindings
+                    if ((csVs.StrongestBindingCoreCode is null) &&
+                        (csVs.StrongestBindingExtendedCode is null))
+                    {
+                        continue;
+                    }
+                    
+                    hasCodeBinding = true;
+                    break;
+                }
+                
+                // if there are no code bindings, suggest moving to THO
+                if (!hasCodeBinding)
+                {
+                    sb.AppendLine($"            <li>CodeSystem: <code>{codeSystem.Id}</code> ({codeSystem.Name}) referenced by ValueSet <code>{valueSet.Id}</code> bound to element <code>{element.Id}</code> is never bound to a <code>code</code>-type element. Should it move to THO?</li>");
                 }
             }
         }
@@ -607,23 +657,23 @@ public class ConfluenceGenerator
                 op.Id.StartsWith(structure.Id + "-", StringComparison.OrdinalIgnoreCase))
             .ToList();
         
-        // find operations in status draft
-        foreach (CgDbOperation op in operations.Where(op => op.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true))
-        {
-            sb.AppendLine($"            <li>Operation: <code>{op.Id}</code> ({op.Name}) has status of <code>{op.Status}</code></li>");
-        }
-
-        // find operations flagged as trial use
-        foreach (CgDbOperation operation in operations.Where(op => op.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
-        {
-            sb.AppendLine($"            <li>Operation: <code>{operation.Id}</code> ({operation.Name}) has standards status <code>{operation.StandardStatus}</code></li>");
-        }
-        
-        // find operations flagged as deprecated
-        foreach (CgDbOperation op in operations.Where(op => op.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
-        {
-            sb.AppendLine($"            <li>Operation: <code>{op.Id}</code> ({op.Name}) has standards status <code>{op.StandardStatus}</code></li>");
-        }
+        // // find operations in status draft
+        // foreach (CgDbOperation op in operations.Where(op => op.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true))
+        // {
+        //     sb.AppendLine($"            <li>Operation: <code>{op.Id}</code> ({op.Name}) has status of <code>{op.Status}</code></li>");
+        // }
+        //
+        // // find operations flagged as trial use
+        // foreach (CgDbOperation operation in operations.Where(op => op.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
+        // {
+        //     sb.AppendLine($"            <li>Operation: <code>{operation.Id}</code> ({operation.Name}) has standards status <code>{operation.StandardStatus}</code></li>");
+        // }
+        //
+        // // find operations flagged as deprecated
+        // foreach (CgDbOperation op in operations.Where(op => op.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
+        // {
+        //     sb.AppendLine($"            <li>Operation: <code>{op.Id}</code> ({op.Name}) has standards status <code>{op.StandardStatus}</code></li>");
+        // }
 
         // find operations flagged as experimental
         foreach (CgDbOperation op in operations.Where(op => op.IsExperimental == true))
@@ -639,23 +689,23 @@ public class ConfluenceGenerator
                 sp.Id.StartsWith(structure.Id + "-", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        // find search parameters in draft
-        foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true))
-        {
-            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) has status <code>{sp.Status}</code></li>");
-        }
-        
-        // find search parameters flagged as trial use
-        foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
-        {
-            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) has standards status <code>{sp.StandardStatus}</code></li>");
-        }
-
-        // find search parameters flagged as deprecated
-        foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
-        {
-            sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) has standards status <code>{sp.StandardStatus}</code></li>");
-        }
+        // // find search parameters in draft
+        // foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.Status?.Equals("draft", StringComparison.OrdinalIgnoreCase) == true))
+        // {
+        //     sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) has status <code>{sp.Status}</code></li>");
+        // }
+        //
+        // // find search parameters flagged as trial use
+        // foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.StandardStatus?.StartsWith("trial", StringComparison.OrdinalIgnoreCase) == true))
+        // {
+        //     sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) has standards status <code>{sp.StandardStatus}</code></li>");
+        // }
+        //
+        // // find search parameters flagged as deprecated
+        // foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.StandardStatus?.Equals("deprecated", StringComparison.OrdinalIgnoreCase) == true))
+        // {
+        //     sb.AppendLine($"            <li>Search Parameter: <code>{sp.Id}</code> ({sp.Name}) has standards status <code>{sp.StandardStatus}</code></li>");
+        // }
 
         // find search parameters flagged as experimental
         foreach (CgDbSearchParameter sp in searchParameters.Where(sp => sp.IsExperimental == true))
