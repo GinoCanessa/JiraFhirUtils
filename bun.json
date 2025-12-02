@@ -1,8 +1,0 @@
-{
-  "workspaces": ["packages/*"],
-  "preload": [],
-  "install": {
-    "auto": "fallback",
-    "peer": true
-  }
-}
