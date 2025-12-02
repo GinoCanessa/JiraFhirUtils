@@ -5,14 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "bun",
-            "internalConsoleOptions": "neverOpen",
+            "name": "C#: jf-loader",
+            "type": "dotnet",
             "request": "launch",
-            "name": "[Bun] Debug File",
-            "program": "${file}",
-            "cwd": "${workspaceFolder}",
-            "noDebug": false,
-            "watchMode": false
+            "projectPath": "${workspaceFolder}/src/jf-loader/jf-loader.csproj"
         }
     ]
 }

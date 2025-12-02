@@ -1,0 +1,32 @@
+{
+  "profiles": {
+    "download": {
+      "commandName": "Project",
+      "commandLineArgs": "download --download-limit 53 --jira-cookie \"seraph.rememberme.cookie=35972%3A300554e9e8546ab16f18bd49bf3ad6b33a4c33b1; JSESSIONID=30D59740C00B164DC98189BAC98B0D47; atlassian.xsrf.token=B5SG-BV05-G2ZY-EESN_13dcdcb67bcf71d13069e44fb1cbfc054d817e2e_lin\""
+    },
+    "load-xml": {
+      "commandName": "Project",
+      "commandLineArgs": "load-xml --drop-tables true"
+    },
+    "summarize-lm": {
+      "commandName": "Project",
+      "commandLineArgs": "summarize --llm-provider lmstudio --llm-model apertus-8b-instruct-2509"
+    },
+    "summarize-openrouter": {
+      "commandName": "Project",
+      "commandLineArgs": "summarize --llm-provider openrouter --llm-model @preset/jira-fhir"
+    },
+    "build-fts": {
+      "commandName": "Project",
+      "commandLineArgs": "build-fts"
+    },
+    "extract-keywords": {
+      "commandName": "Project",
+      "commandLineArgs": "extract-keywords --fhir-spec-database fhir.sqlite"
+    },
+    "fix-scores": {
+      "commandName": "Project",
+      "commandLineArgs": "fix-scores --db-path jira_issues.sqlite"
+    }
+  }
+}

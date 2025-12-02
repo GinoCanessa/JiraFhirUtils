@@ -1,238 +1,309 @@
 
 # HL7 / FHIR Jira Utilities
 
-This repo contains some tools and utilities to ease Jira ticket processing for FHIR.
+This repo contains tools and utilities to ease Jira ticket processing for FHIR.
 
 ## Project Structure
 
-This project uses a monorepo structure with workspaces:
+This project uses a .NET 9 solution structure:
 
-- `packages/fhir-jira-db/` - Database utilities and processing scripts
-- `packages/fhir-jira-mcp/` - Model Context Protocol server
-- `packages/database-utils/` - Shared database utilities
-- `packages/jira-fhir-utils/` - Main utilities package
+- `src/jira-fhir-cli/` - Command-line interface for database operations
+- `src/jira-fhir-mcp/` - Model Context Protocol (MCP) server for AI integrations
+- `src/JiraFhirUtils.Common/` - Shared database models and utilities
+- `src/JiraFhirUtils.SQLiteGenerator/` - Source generator for SQLite table mappings
+- `src/fmg-r6-review/` - FMG R6 review utilities
 
-## Database Processing (`packages/fhir-jira-db`)
+## Prerequisites
 
-This package contains utilities to create a SQLite database based on Jira tickets and compressed files with FHIR Core ticket XML exports:
-* `download-issues.ts` downloads issues directly from Jira using the REST API
-* `extract-archives.ts` extracts the included tar.gz archives into their respective directories for processing
-* `load-initial.ts` loads the contents of the `bulk` directory, creates a database, and assumes no duplicates/conflicts
-* `load-updates.ts` loads the contents of the `updates` directory into the database, updating existing records if they exist or adding new records if they do not
-* `create-fts.ts` creates SQLite FTS5 full-text search tables for `issues` and `comments` from the database
-* `create-tfidf.ts` extracts TF-IDF data from Jira issues
-* `bulk.tar.gz` contains FHIR Core tickets FHIR-2839 through FHIR-51487, as of 2025.07.22
-* ~~`updates.tar.gz` contains FHIR Core tickets that have changes on 2025.07.22~~ (currently there are no updates)
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
+- SQLite database with Jira issues (see Database Setup below)
 
-- **extract-archives.ts**
-  Use this script to extract the tar.gz archives before processing. It will extract `bulk.tar.gz` to the `bulk` directory and `updates.tar.gz` to the `updates` directory. Any existing directories will be replaced.
-  **Run with:**
-  ```sh
-  bun run extract-archives
-  # or
-  bun packages/fhir-jira-db/extract-archives.ts
-  ```
-
-- **load-initial.ts**
-  Use this script to create a new database from scratch using the XML files in the `bulk` directory. It assumes there are no duplicate or conflicting issues.
-  **Run with:**
-  ```sh
-  bun run load-initial
-  # or
-  bun packages/fhir-jira-db/load-initial.ts
-  ```
-
-- **load-updates.ts**
-  Use this script to apply updates to an existing database using XML files in the `updates` directory. It will insert new issues, update existing ones, and add new comments or custom fields as needed, without affecting unrelated records.
-  **Run with:**
-  ```sh
-  bun run load-updates
-  # or
-  bun packages/fhir-jira-db/load-updates.ts
-  ```
-
-- **create-fts.ts**
-  After loading or updating the database, run this script to (re)create the FTS5 (Full-Text Search) tables for issues and comments, and populate them with the latest data. This enables fast, flexible text searching across issues and comments.
-  **Run with:**
-  ```sh
-  bun run create-fts
-  # or
-  bun packages/fhir-jira-db/create-fts.ts
-  ```
-  The script will drop and recreate the FTS5 tables, then fill them with the current contents of the database.
-  Example queries you can run after setup:
-  - Search issues: `SELECT * FROM issues_fts WHERE issues_fts MATCH 'search term'`
-  - Search comments: `SELECT * FROM comments_fts WHERE comments_fts MATCH 'search term'`
-  - Phrase search: `SELECT * FROM issues_fts WHERE issues_fts MATCH '"exact phrase"'`
-  - Field-specific: `SELECT * FROM issues_fts WHERE title MATCH 'search term'`
-
-- **create-tfidf.ts**
-  This script implements TF-IDF (Term Frequency-Inverse Document Frequency) keyword extraction from JIRA issues. It analyzes text content from issue titles, descriptions, summaries, and custom fields to identify the most relevant keywords for each issue. The implementation includes FHIR-specific processing to preserve domain terminology.
-  **Run with:**
-  ```sh
-  bun run create-tfidf
-  # or
-  bun packages/fhir-jira-db/create-tfidf.ts
-  ```
-  The script will:
-  - Create new database tables (`tfidf_keywords` and `tfidf_corpus_stats`)
-  - Process all issues in batches to extract keywords
-  - Calculate TF-IDF scores for each keyword per issue
-  - Store results for fast keyword-based search and similarity analysis
-  
-  Features:
-  - Extracts top 15 keywords per issue by default
-  - Preserves FHIR resource names (Patient, Observation, etc.)
-  - Recognizes version identifiers (R4, R5, STU3)
-  - Filters common stopwords while keeping technical terms
-  - Enables finding similar issues based on keyword overlap
-  
-  Example uses after setup:
-  - Find keywords for an issue: Query `tfidf_keywords` table
-  - Search issues by keywords: Use keyword matching queries
-  - Find similar issues: Compare keyword vectors
-  - Analyze keyword trends: Group by time periods
-
-Scripts require Bun (v1.0 or higher). First install dependencies:
-```sh
-bun install
-```
-
-The scripts expect the relevant XML files to be present in their respective directories (`bulk` for initial load, `updates` for updates). The database file is named `jira_issues.sqlite` and will be created or updated in the current working directory.
-
-## Database Path Configuration
-
-All database scripts now use a unified database path resolution system that supports:
-
-1. **Explicit database path** via `--db-path` command-line option
-2. **Automatic discovery** in these locations (in order):
-   - Current working directory: `./jira_issues.sqlite`
-   - Parent directory: `../jira_issues.sqlite`
-   - Script directory: `<script-dir>/jira_issues.sqlite`
-   - Script parent directory: `<script-dir>/../jira_issues.sqlite`
-
-### Command-Line Options
-
-All scripts support these common options:
+## Building
 
 ```sh
-# Use explicit database path
-bun packages/fhir-jira-db/load-initial.ts --db-path /path/to/custom/database.sqlite
-
-# Check if database exists without running the script
-bun packages/fhir-jira-db/load-initial.ts --db-check
-
-# Show help
-bun packages/fhir-jira-db/load-initial.ts --help
+dotnet build
 ```
 
-### Script-Specific Options
+## CLI Tool (`jira-fhir-cli`)
 
-- **load-initial.ts**: `--initial-dir <dir>` - Custom initial XML directory (default: `bulk`)
-- **load-updates.ts**: `--update-dir <dir>` - Custom update XML directory (default: `updates`)
-- **create-tfidf.ts**: 
-  - `--batch-size <size>` - Processing batch size (default: 1000)
-  - `--top-keywords <count>` - Keywords per issue (default: 15)
+The CLI tool provides commands for loading, indexing, and searching Jira issues.
 
-### Examples
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `download` | Download JIRA XML files by week starting from current week working backwards |
+| `load-xml` | Load JIRA issues from XML export files into the database |
+| `build-fts` | Create full-text search (FTS5) index tables in the database |
+| `extract-keywords` | Extract and index keywords from issues for BM25 search |
+| `search-bm25` | Search issues using BM25 ranking algorithm |
+| `summarize` | Generate AI summaries of issues using an LLM provider |
+| `fix-scores` | Recalculate IDF and BM25 scores using existing frequency counts |
+
+### Command Details
+
+#### `download` - Download JIRA XML Files
+
+Download issues directly from JIRA using the REST API. Requires authentication via cookie.
 
 ```sh
-# Load initial data from custom directory with custom database
-bun packages/fhir-jira-db/load-initial.ts --db-path ./custom.sqlite --initial-dir ./my-bulk-data
-
-# Create TF-IDF with custom settings
-bun packages/fhir-jira-db/create-tfidf.ts --db-path ./prod.sqlite --batch-size 500 --top-keywords 20
-
-# Check if database exists before processing
-bun packages/fhir-jira-db/create-fts.ts --db-check
+dotnet run --project src/jira-fhir-cli -- download --cookie "YOUR_JIRA_COOKIE" --jira-xml-dir ./downloads
 ```
 
-## MCP Server (`packages/fhir-jira-mcp`)
+Options:
+- `--cookie`, `--jira-cookie` - JIRA authentication cookie (required)
+- `--jira-xml-dir`, `--initial-dir` - Directory to save XML files (default: `bulk`)
+- `--specification`, `--spec` - Optional JIRA specification filter
+- `--download-limit` - Optional limit on number of days to download
 
-This package contains a Model Context Protocol (MCP) server that provides read-only access to the JIRA issues SQLite database. The server enables browsing work queues and searching for related tickets through various tools.
+#### `load-xml` - Load XML into Database
+
+Load JIRA XML export files into a SQLite database.
+
+```sh
+dotnet run --project src/jira-fhir-cli -- load-xml --db-path ./jira_issues.sqlite --jira-xml-dir ./bulk
+```
+
+Options:
+- `--db-path` - Path to SQLite database file (default: `jira_issues.sqlite`)
+- `--jira-xml-dir`, `--initial-dir` - Directory containing XML files (default: `bulk`)
+- `--drop-tables` - Drop existing tables before loading (default: false)
+- `--keep-custom-field-source` - Keep source table for custom fields (default: false)
+
+#### `build-fts` - Create Full-Text Search Tables
+
+Create SQLite FTS5 full-text search tables for issues and comments.
+
+```sh
+dotnet run --project src/jira-fhir-cli -- build-fts --db-path ./jira_issues.sqlite
+```
+
+Options:
+- `--db-path` - Path to SQLite database file (default: `jira_issues.sqlite`)
+
+Example FTS queries after setup:
+```sql
+-- Search issues
+SELECT * FROM issues_fts WHERE issues_fts MATCH 'search term';
+
+-- Phrase search
+SELECT * FROM issues_fts WHERE issues_fts MATCH '"exact phrase"';
+
+-- Field-specific search
+SELECT * FROM issues_fts WHERE title MATCH 'search term';
+```
+
+#### `extract-keywords` - Extract Keywords for BM25
+
+Extract keywords from issues for BM25-based search. Includes FHIR-specific processing to preserve domain terminology.
+
+```sh
+dotnet run --project src/jira-fhir-cli -- extract-keywords --db-path ./jira_issues.sqlite
+```
+
+Options:
+- `--db-path` - Path to SQLite database file (default: `jira_issues.sqlite`)
+- `--fhir-spec-database` - Path to FHIR specification database for enhanced keyword extraction
+- `--keyword-database` - Path to auxiliary database with stop words (default: `auxiliary.sqlite`)
+
+#### `search-bm25` - BM25 Search
+
+Search issues using the BM25 ranking algorithm.
+
+```sh
+dotnet run --project src/jira-fhir-cli -- search-bm25 --query "patient resource validation" --top-k 20
+```
+
+Options:
+- `--query` - Search query (required)
+- `--db-path` - Path to SQLite database file (default: `jira_issues.sqlite`)
+- `--top-k`, `--limit` - Number of results to return (default: 20)
+- `--keyword-type` - Filter by keyword type (Word, FhirElementPath, FhirOperationName)
+- `--bm25-k1` - BM25 k1 parameter for term frequency saturation (default: 1.2)
+- `--bm25-b` - BM25 b parameter for length normalization (default: 0.75)
+- `--show-keywords` - Show top keywords by IDF score
+
+#### `summarize` - Generate AI Summaries
+
+Generate AI summaries of issues using various LLM providers.
+
+```sh
+dotnet run --project src/jira-fhir-cli -- summarize --db-path ./jira_issues.sqlite --llm-provider openai --llm-api-key "YOUR_API_KEY"
+```
+
+Options:
+- `--db-path` - Path to SQLite database file (default: `jira_issues.sqlite`)
+- `--llm-provider` - LLM provider: `openai`, `openrouter`, `lmstudio`, `azureopenai`, `ollama`
+- `--llm-api-key` - API key (can also use environment variables or user secrets)
+- `--llm-endpoint` - Custom API endpoint URL
+- `--llm-model` - Model name to use
+- `--llm-temperature` - Temperature setting (default: 0.3)
+- `--llm-max-tokens` - Maximum response tokens (default: 1000)
+- `--batch-size` - Issues per batch (default: 100)
+- `--overwrite` - Overwrite existing summaries
+
+For Azure OpenAI:
+- `--llm-deployment-name` - Azure deployment name
+- `--llm-resource-name` - Azure resource name
+- `--llm-api-version` - Azure API version
+
+#### `fix-scores` - Recalculate BM25 Scores
+
+Recalculate IDF and BM25 scores using existing frequency counts.
+
+```sh
+dotnet run --project src/jira-fhir-cli -- fix-scores --db-path ./jira_issues.sqlite
+```
+
+Options:
+- `--db-path` - Path to SQLite database file (default: `jira_issues.sqlite`)
+- `--bm25-k1` - BM25 k1 parameter (default: 1.2)
+- `--bm25-b` - BM25 b parameter (default: 0.75)
+- `--show-progress` - Show progress during recalculation (default: true)
+
+## MCP Server (`jira-fhir-mcp`)
+
+The MCP server provides read-only access to the JIRA issues database for AI tools like Claude Code.
 
 ### Features
+
 - Browse work queues with filtering by project, work group, resolution, status, and assignee
 - Full-text search across issues, URLs, artifacts, pages, titles, and summaries
 - Retrieve detailed issue information including custom fields and comments
-- List all project keys and work groups in the database
+- Find related issues using keyword similarity
+- List all projects and work groups in the database
 
-### Installation & Usage
+### Running the MCP Server
 
-First, install dependencies:
-```sh
-cd packages/fhir-jira-mcp
-bun install
-```
-
-#### STDIO Mode (For Claude Desktop and MCP clients)
-```sh
-bun start
-# or
-bun packages/fhir-jira-mcp/index.ts
-```
-
-STDIO mode is the default and recommended mode for MCP clients like Claude Desktop. The server communicates via standard input/output using JSON-RPC messages.
-
-#### HTTP Mode (For testing and web integration)
-```sh
-bun packages/fhir-jira-mcp/mcp-http.ts
-# or
-bun packages/fhir-jira-mcp/mcp-http.ts --port 3000
-```
-
-HTTP mode starts a web server that wraps the STDIO MCP server and exposes it via HTTP endpoints. This is useful for testing, debugging, or integrating with web applications. The server runs on port 3000 by default, or you can specify a custom port with `--port <number>`. The HTTP wrapper spawns the main MCP server as a subprocess and handles JSON-RPC message routing between HTTP clients and the MCP server.
-
-The MCP server now uses the same unified database path resolution system as the database scripts:
+Start the HTTP MCP server:
 
 ```sh
-# Use explicit database path
-bun packages/fhir-jira-mcp/index.ts --db-path /path/to/custom/database.sqlite
-
-# Start HTTP server on custom port with custom database
-bun packages/fhir-jira-mcp/mcp-http.ts --port 8080 --mcp-command "bun packages/fhir-jira-mcp/index.ts --db-path ./prod.sqlite"
-
-# Check database connectivity
-bun packages/fhir-jira-mcp/index.ts --db-check
+dotnet run --project src/jira-fhir-mcp -- mcp-http --port 5000 --db-path ./jira_issues.sqlite
 ```
 
-The server operates in read-only mode for database safety and will automatically discover the database file using the same fallback locations as the database scripts. See the [fhir-jira-mcp README](packages/fhir-jira-mcp/README.md) for detailed configuration and usage instructions, including Claude Desktop integration and HTTP API documentation.
+Options:
+- `--port`, `-p` - HTTP server port (default: 5000)
+- `--url` - Public URL for accessing the server
+- `--db-path` - Path to SQLite database file (default: `jira_issues.sqlite`)
+- `--fhir-spec-database` - Path to FHIR specification database
+
+The MCP endpoint is available at `http://localhost:5000/mcp`.
 
 ### Claude Code Integration
 
 To use the MCP server with Claude Code, add it using the `claude mcp add` command:
 
 ```sh
-claude mcp add FhirJira "bun" "packages/fhir-jira-mcp/index.ts"
+claude mcp add FhirJira -- dotnet run --project src/jira-fhir-mcp -- mcp-http --db-path /path/to/jira_issues.sqlite
 ```
 
-This configures Claude Code to run the MCP server in stdio mode using Bun. The server will automatically discover your database file or you can specify a custom path by modifying the command to include `--db-path`:
+Or if you've built the project:
 
 ```sh
-claude mcp add FhirJira "bun" "packages/fhir-jira-mcp/index.ts" "--db-path" "/path/to/custom/database.sqlite"
+claude mcp add FhirJira -- ./src/jira-fhir-mcp/bin/Debug/net9.0/jira-fhir-mcp mcp-http --db-path /path/to/jira_issues.sqlite
+```
+
+## Database Setup
+
+### Using Pre-built Archives
+
+The repository includes `bulk.tar.gz` containing FHIR Core tickets.
+
+1. Extract the archive:
+   ```sh
+   tar -xzf bulk.tar.gz
+   ```
+
+2. Load the XML files into a database:
+   ```sh
+   dotnet run --project src/jira-fhir-cli -- load-xml --db-path ./jira_issues.sqlite --jira-xml-dir ./bulk
+   ```
+
+3. Create full-text search tables:
+   ```sh
+   dotnet run --project src/jira-fhir-cli -- build-fts --db-path ./jira_issues.sqlite
+   ```
+
+4. (Optional) Extract keywords for BM25 search:
+   ```sh
+   dotnet run --project src/jira-fhir-cli -- extract-keywords --db-path ./jira_issues.sqlite
+   ```
+
+### Downloading Fresh Data
+
+To download the latest issues from JIRA:
+
+```sh
+dotnet run --project src/jira-fhir-cli -- download --cookie "YOUR_JIRA_COOKIE" --jira-xml-dir ./downloads
+```
+
+Then load and index as described above.
+
+## Database Path Resolution
+
+All tools support automatic database discovery in these locations (in order):
+1. Explicit path via `--db-path` option
+2. Current working directory: `./jira_issues.sqlite`
+3. Parent directory: `../jira_issues.sqlite`
+4. Relative to executable location
+
+## Configuration
+
+### User Secrets
+
+For sensitive configuration like API keys, use .NET User Secrets:
+
+```sh
+cd src/jira-fhir-cli
+dotnet user-secrets set "LLM:openai:ApiKey" "your-api-key"
+dotnet user-secrets set "LLM:azureopenai:ApiKey" "your-azure-key"
+```
+
+### Environment Variables
+
+API keys can also be set via environment variables:
+- `OPENAI_API_KEY`
+- `OPENROUTER_API_KEY`
+- `AZURE_OPENAI_API_KEY`
+
+### Configuration File
+
+Create an `appsettings.json` in the project directory:
+
+```json
+{
+  "LLM": {
+    "openai": {
+      "ApiKey": "your-api-key"
+    }
+  }
+}
 ```
 
 ## Quick Start
 
-1. Install dependencies:
+1. Build the solution:
    ```sh
-   bun install
+   dotnet build
    ```
 
-2. Extract archives and load initial data:
+2. Extract and load initial data:
    ```sh
-   bun run extract-archives
-   bun run load-initial
-   bun run create-fts
+   tar -xzf bulk.tar.gz
+   dotnet run --project src/jira-fhir-cli -- load-xml
+   dotnet run --project src/jira-fhir-cli -- build-fts
    ```
 
-3. (Optional) Download latest issues from Jira:
+3. (Optional) Set up keyword search:
    ```sh
-   bun run download-issues
+   dotnet run --project src/jira-fhir-cli -- extract-keywords
    ```
 
 4. Start the MCP server:
    ```sh
-   cd packages/fhir-jira-mcp
-   bun start
+   dotnet run --project src/jira-fhir-mcp -- mcp-http
    ```
+
+## License
+
+See [LICENSE](LICENSE) file.

@@ -1,0 +1,16 @@
+{
+  "profiles": {
+    "create-dict": {
+      "commandName": "Project",
+      "commandLineArgs": "create-dict-db --dict-src-path dict-src"
+    },
+    "process": {
+      "commandName": "Project",
+      "commandLineArgs": "process --db-path fmg_review.sqlite --drop-tables --fhir-repo-path specs/fhir --fhir-ci-db fhir-r6.sqlite --fhir-published-db fhir.sqlite --dict-db dict.sqlite"
+    },
+    "gen local": {
+      "commandName": "Project",
+      "commandLineArgs": "generate --db-path fmg_review.sqlite --fhir-ci-db fhir-r6.sqlite --local-export-dir temp/confluence"
+    }
+  }
+}

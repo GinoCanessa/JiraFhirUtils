@@ -1,0 +1,67 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36408.4
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JiraFhirUtils.Common", "src\JiraFhirUtils.Common\JiraFhirUtils.Common.csproj", "{68C9963F-636A-4C5B-9C2B-AB85BF2274CE}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
+	ProjectSection(SolutionItems) = preProject
+		.gitignore = .gitignore
+		csproject.props = csproject.props
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JiraFhirUtils.SQLiteGenerator", "src\JiraFhirUtils.SQLiteGenerator\JiraFhirUtils.SQLiteGenerator.csproj", "{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jira-fhir-cli", "src\jira-fhir-cli\jira-fhir-cli.csproj", "{AF184D6D-4F6F-616C-4137-EF3082C765DC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jira-fhir-cli.Tests", "src\jira-fhir-cli.Tests\jira-fhir-cli.Tests.csproj", "{888CD6A1-A2A9-4CDE-9373-675590A7FB51}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jira-fhir-mcp", "src\jira-fhir-mcp\jira-fhir-mcp.csproj", "{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jira-fhir-mcp.Tests", "src\jira-fhir-mcp.Tests\jira-fhir-mcp.Tests.csproj", "{D7C30218-86D2-44B1-BC87-C60F89328C41}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "fmg-r6-review", "src\fmg-r6-review\fmg-r6-review.csproj", "{45FDDCE5-B930-4B53-84E8-922C327BCDD6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{68C9963F-636A-4C5B-9C2B-AB85BF2274CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{68C9963F-636A-4C5B-9C2B-AB85BF2274CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{68C9963F-636A-4C5B-9C2B-AB85BF2274CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{68C9963F-636A-4C5B-9C2B-AB85BF2274CE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E288FC54-91EE-4ACE-A4A6-BC42D29B3020}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AF184D6D-4F6F-616C-4137-EF3082C765DC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF184D6D-4F6F-616C-4137-EF3082C765DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AF184D6D-4F6F-616C-4137-EF3082C765DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AF184D6D-4F6F-616C-4137-EF3082C765DC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{888CD6A1-A2A9-4CDE-9373-675590A7FB51}.Release|Any CPU.Build.0 = Release|Any CPU
+		{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{414C7E0A-701C-4F77-AFBE-6ACC2A2143E3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D7C30218-86D2-44B1-BC87-C60F89328C41}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D7C30218-86D2-44B1-BC87-C60F89328C41}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D7C30218-86D2-44B1-BC87-C60F89328C41}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D7C30218-86D2-44B1-BC87-C60F89328C41}.Release|Any CPU.Build.0 = Release|Any CPU
+		{45FDDCE5-B930-4B53-84E8-922C327BCDD6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{45FDDCE5-B930-4B53-84E8-922C327BCDD6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{45FDDCE5-B930-4B53-84E8-922C327BCDD6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{45FDDCE5-B930-4B53-84E8-922C327BCDD6}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0C2C312C-7E3A-49C9-91D8-93F1E7C322C1}
+	EndGlobalSection
+EndGlobal
