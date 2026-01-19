@@ -1035,6 +1035,7 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                                 using (IDbTransaction transaction = dbConnection.BeginTransaction())
                                 {
                                     IDbCommand command = dbConnection.CreateCommand();
+                                    command.Transaction = transaction;
                                     command.CommandText = $"""
                                         {insertLiteral} INTO {dbTableName} (
                                             {{{string.Join(_comma_line_6, tableColInfo.Select(p => p.name))}}}
@@ -1060,6 +1061,7 @@ public sealed class JfSQLiteGenerator : IIncrementalGenerator
                                 using (IDbTransaction transaction = dbConnection.BeginTransaction())
                                 {
                                     IDbCommand command = dbConnection.CreateCommand();
+                                    command.Transaction = transaction;
                                     command.CommandText = $"""
                                         {insertLiteral} INTO {dbTableName} (
                                             {{{string.Join(_comma_line_6, tableColInfo.Where(p => p.isIdentity == false).Select(p => p.name))}}}

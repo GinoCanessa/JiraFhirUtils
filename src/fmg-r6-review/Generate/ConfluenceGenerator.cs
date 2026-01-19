@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -212,7 +213,7 @@ public class ConfluenceGenerator
         sb.AppendLine("        <tr>");
         sb.AppendLine("            <th>Path</th>");
         sb.AppendLine("            <th>Is Required</th>");
-        sb.AppendLine("            <th>Not Array</th>");
+        sb.AppendLine("            <th>Max Cardinality</th>");
         sb.AppendLine("            <th>Trial Use</th>");
         sb.AppendLine("            <th>Has fixed[x]</th>");
         sb.AppendLine("            <th>Has pattern[x]</th>");
@@ -287,7 +288,7 @@ public class ConfluenceGenerator
             sb.AppendLine("        <tr>");
             sb.AppendLine($"            <td><code>{element.Path}</code></td>");
             sb.AppendLine($"            <td>{(element.MinCardinality > 0 ? "X" : string.Empty)}</td>");
-            sb.AppendLine($"            <td>{(element.MaxCardinality != 1 ? "X" : string.Empty)}</td>");
+            sb.AppendLine($"            <td><code>{element.MaxCardinalityString}</code></td>");
             sb.AppendLine($"            <td>{(element.StandardStatus?.Equals("trial-use", StringComparison.OrdinalIgnoreCase) == true ? "X" : string.Empty)}</td>");
             sb.AppendLine($"            <td>{(element.FixedValue is null ? string.Empty : "X")}</td>");
             sb.AppendLine($"            <td>{(element.PatternValue is null ? string.Empty : "X")}</td>");
@@ -492,7 +493,7 @@ public class ConfluenceGenerator
         HashSet<string> pageTaskIds)
     {
         sb.AppendLine("            <li>Vote on and report content disposition to FMG: Core as Normative, Relocate, or Remove</li>");
-        sb.AppendLine("            <p>Note that the following list will be based on remaining in Core as Normative.");
+        sb.AppendLine("            <p>Note that the following list will be based on remaining in Core as Normative.</p>");
 
         addTasksForDispoCoreNormative(sb, artifact, structure, pageTaskIds);
     }
@@ -970,7 +971,7 @@ public class ConfluenceGenerator
                         <tbody>
                             {{{string.Join("\n            ", removedFhirArtifactRecords.Select(record =>
                                 $"<tr>" +
-                                $"<td><code>{record.Word}<code></td>" +
+                                $"<td><code>{HtmlEncoder.Default.Encode(record.Word)}</code></td>" +
                                 $"<td>{record.ArtifactClass}</td>" +
                                 $"</tr>"
                             ))}}}
@@ -988,7 +989,7 @@ public class ConfluenceGenerator
                         <tbody>
                             {{{string.Join("\n            ", unknownWordRecords.Select(record =>
                                 $"<tr>" +
-                                $"<td><code>{record.Word}<code></td>" +
+                                $"<td><code>{HtmlEncoder.Default.Encode(record.Word)}</code></td>" +
                                 $"<td>{(record.IsTypo == true ? "Yes" : "No")}</td>" +
                                 $"</tr>"
                             ))}}}
@@ -1007,7 +1008,7 @@ public class ConfluenceGenerator
                         <tbody>
                             {{{string.Join("\n            ", imgIssueRecords.Select(record =>
                                 $"<tr>" +
-                                $"<td><code>{record.Source}<code></td>" +
+                                $"<td><code>{record.Source}</code></td>" +
                                 $"<td>{(record.MissingAlt ? "Yes" : "No")}</td>" +
                                 $"<td>{(record.NotInFigure ? "Yes" : "No")}</td>" +
                                 $"</tr>"
@@ -1192,7 +1193,7 @@ public class ConfluenceGenerator
                                 $"<td>{artifact.WorkGroupComments}</td>" +
                                 $"</tr>"))}}}
                         </tbody>
-
+                    </table>
                 </ac:rich-text-body>
             </ac:structured-macro>
             """;
