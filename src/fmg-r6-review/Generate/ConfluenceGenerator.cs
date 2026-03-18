@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -85,7 +86,6 @@ public class ConfluenceGenerator
             _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Origin", new Uri(_config.ConfluenceBaseUrl).AbsoluteUri);
             _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Referer", new Uri(_config.ConfluenceBaseUrl).AbsoluteUri);
         }
-
     }
 
     private Dictionary<string, List<(string title, string relativeLink)>> _writtenPages = [];
@@ -207,12 +207,43 @@ public class ConfluenceGenerator
 
         StringBuilder sb = new StringBuilder();
 
+        sb.AppendLine("<p>The following table lists the elements defined in this structure with various items to check:</p>");
+        sb.AppendLine("<ul>");
+        sb.AppendLine("    <li><strong>Path</strong>: The Path of the element definition - note that inherited elements are not listed, for brevity.</li>");
+        sb.AppendLine("    <li><strong>Is Required</strong>: Indicates whether the element is required (i.e., min cardinality &gt; 0)." +
+            " WGs should ensure that required elements are intended to be so and are appropriately future-proofed in a normative context" +
+            " (varies depending on element types, but generally think about possible future values).</li>");
+        sb.AppendLine("    <li><strong>Max Cardinality</strong>: The max cardinality of the element - check for any fixed maximum cardinalities and ensure they are intended." +
+            " Specifically, make sure that the data being represented by this element will not have <i>more</i> repetitions required in the future.</li>");
+        sb.AppendLine("    <li><strong>Trial Use</strong>: Indicates whether the element is flagged as trial use -" +
+            " Elements SHOULD NOT be flagged as Trial Use in R6. WGs need to decide whether the element is included as normative or moved into extension space.</li>");
+        sb.AppendLine("    <li><strong>Has fixed[x]</strong>: Indicates whether the element has any fixed[x] values -" +
+            " fixed values can have odd interactions with choice types and repeating elements. WGs should double-check if this is intended.");
+        sb.AppendLine("    <li><strong>Has pattern[x]</strong>: Indicates whether the element has any pattern[x] values -" +
+            " ensure that WGs understand how patterns are applied across repetitions and choice types (if applicable).");
+        sb.AppendLine("    <li><strong>Required Binding</strong>: Indicates whether there are any required bindings on this element." +
+            " This colum notes whether the element itself is optional or required, and whether there are <i>possibly</i> codes that" +
+            " assist in future-proofing. Note that there are places where it is appropriate to have a required binding to fixed" +
+            " sets, this is for WGs to review in the context of normativity." +
+            "</li>");
+        sb.AppendLine("    <li><strong>External Required Binding</strong>: Indicates whether there are any required bindings on this element to external value sets" +
+            " (i.e., not defined in the core specification). Note that this is not allowed for 'code'-type elements, and other types should be reviewed" +
+            " to ensure that this is the desired behavior (i.e., required values will change post-publication)." +
+            "</li>");
+        sb.AppendLine("    <li><strong>Check <code>meaningWhenMissing</code></strong>: Indicates whether there are any elements that likely should have a meaningWhenMissing " +
+            "value but do not." +
+            "</li>");
+        sb.AppendLine("    <li><strong>Is Modifier</strong>: Indicates whether the element is flagged as a modifier - check to ensure that this is intended and that any modifier elements have appropriate modifier reasons provided." +
+            " Note that this column indicates if there is a 'modifierReason' specified or not." +
+            "</li>");
+        sb.AppendLine("</ul>");
+
         sb.AppendLine("<table>");
         sb.AppendLine("    <thead>");
         sb.AppendLine("        <tr>");
         sb.AppendLine("            <th>Path</th>");
         sb.AppendLine("            <th>Is Required</th>");
-        sb.AppendLine("            <th>Not Array</th>");
+        sb.AppendLine("            <th>Max Cardinality</th>");
         sb.AppendLine("            <th>Trial Use</th>");
         sb.AppendLine("            <th>Has fixed[x]</th>");
         sb.AppendLine("            <th>Has pattern[x]</th>");
@@ -269,6 +300,10 @@ public class ConfluenceGenerator
             {
                 requiredBinding = "<i>optional</i> - " + requiredBinding;
             }
+            else if (requiredBinding is not null)
+            {
+                requiredBinding = "<b>required</b> - " + requiredBinding;
+            }
 
             requiredBinding ??= string.Empty;
 
@@ -287,7 +322,7 @@ public class ConfluenceGenerator
             sb.AppendLine("        <tr>");
             sb.AppendLine($"            <td><code>{element.Path}</code></td>");
             sb.AppendLine($"            <td>{(element.MinCardinality > 0 ? "X" : string.Empty)}</td>");
-            sb.AppendLine($"            <td>{(element.MaxCardinality != 1 ? "X" : string.Empty)}</td>");
+            sb.AppendLine($"            <td><code>{element.MaxCardinalityString}</code></td>");
             sb.AppendLine($"            <td>{(element.StandardStatus?.Equals("trial-use", StringComparison.OrdinalIgnoreCase) == true ? "X" : string.Empty)}</td>");
             sb.AppendLine($"            <td>{(element.FixedValue is null ? string.Empty : "X")}</td>");
             sb.AppendLine($"            <td>{(element.PatternValue is null ? string.Empty : "X")}</td>");
@@ -329,14 +364,16 @@ public class ConfluenceGenerator
             ? null
             : SpecPageRecord.SelectSingle(_db, PageFileName: artifact.NotesPageFilename);
 
+        /*
+            <h3>Urgent Item Checklist</h3>
+            {{{getStructureUrgentChecklist(artifact, structure, pageTaskIds)}}}
+         */
+
         string content = $$$"""
             <ac:structured-macro ac:name="panel">
                 <ac:parameter ac:name="title">R6 Checklist for {{{artifact.FhirId}}}</ac:parameter>
                 <ac:rich-text-body>
                     <h2>Artifact {{{artifact.FhirId}}} ({{{artifact.Name}}})</h2>
-
-                    <h3>Urgent Item Checklist</h3>
-                    {{{getStructureUrgentChecklist(artifact, structure, pageTaskIds)}}}
 
                     <h2>All Analysis Information</h2>
                     The following content was generated to assist in the review of this artifact for R6 compliance.
@@ -492,7 +529,7 @@ public class ConfluenceGenerator
         HashSet<string> pageTaskIds)
     {
         sb.AppendLine("            <li>Vote on and report content disposition to FMG: Core as Normative, Relocate, or Remove</li>");
-        sb.AppendLine("            <p>Note that the following list will be based on remaining in Core as Normative.");
+        sb.AppendLine("            <p>Note that the following list will be based on remaining in Core as Normative.</p>");
 
         addTasksForDispoCoreNormative(sb, artifact, structure, pageTaskIds);
     }
@@ -746,6 +783,10 @@ public class ConfluenceGenerator
         }
         else
         {
+            sb.AppendLine("<p>The following table is informational and simply lists the search parameters that are defined on this resource." +
+                " WGs should review the search parameters to ensure the definitions are clear and correct, and that the definitions" +
+                " are appropriate to remain in core as normative (as opposed to moving into an IG).</p>");
+
             sb.AppendLine("<table>");
             sb.AppendLine("    <thead>");
             sb.AppendLine("        <tr>");
@@ -802,6 +843,10 @@ public class ConfluenceGenerator
         }
         else
         {
+            sb.AppendLine("<p>The following table is informational and simply lists the operations that are defined on this resource." +
+                " WGs should review the operations to ensure the definitions are clear and correct, and that the definitions" +
+                " are appropriate to remain in core as normative (as opposed to moving into an IG).</p>");
+
             sb.AppendLine("<table>");
             sb.AppendLine("    <thead>");
             sb.AppendLine("        <tr>");
@@ -917,6 +962,7 @@ public class ConfluenceGenerator
 
                     <h3>Conformance Language Summary</h3>
                     <p>'Conformant' conformance language appears in all-upper case. 'Non-conformant' covers all other cases appearing in the content.</p>
+                    <p>Conformance language formatting SHOULD be consistent with expectations on the page. This information is provided for WG review.</p>
                     <table>
                         <thead>
                             <tr>
@@ -960,6 +1006,8 @@ public class ConfluenceGenerator
                     </table>
 
                     <h3>Possibly Removed FHIR Artifact Literals Found on Page</h3>
+                    <p>The following table lists words that are literal matches for resources or elements that have existed in FHIR, but do not currently exist.
+                    This information is provided for WG review, as tooling cannot determine if this is intentional or not.</p>
                     <table>
                         <thead>
                             <tr>
@@ -970,7 +1018,7 @@ public class ConfluenceGenerator
                         <tbody>
                             {{{string.Join("\n            ", removedFhirArtifactRecords.Select(record =>
                                 $"<tr>" +
-                                $"<td><code>{record.Word}<code></td>" +
+                                $"<td><code>{HtmlEncoder.Default.Encode(record.Word)}</code></td>" +
                                 $"<td>{record.ArtifactClass}</td>" +
                                 $"</tr>"
                             ))}}}
@@ -978,6 +1026,8 @@ public class ConfluenceGenerator
                     </table>
 
                     <h3>Unknown Words Found on Page</h3>
+                    <p>The following table includes "words" that are not listed in the known dictionaries. The text is not necessarily incorrect - anything
+                    that is currently not listed in the source dictionaries will be listed below.</p>
                     <table>
                         <thead>
                             <tr>
@@ -988,14 +1038,16 @@ public class ConfluenceGenerator
                         <tbody>
                             {{{string.Join("\n            ", unknownWordRecords.Select(record =>
                                 $"<tr>" +
-                                $"<td><code>{record.Word}<code></td>" +
+                                $"<td><code>{HtmlEncoder.Default.Encode(record.Word)}</code></td>" +
                                 $"<td>{(record.IsTypo == true ? "Yes" : "No")}</td>" +
                                 $"</tr>"
                             ))}}}
                         </tbody>
                     </table>
             
-                    <h3>Images with Issues</h3>
+                    <h3>Image Tagging</h3>
+                    <p>The following table lists images in the page, with notes about missing either an alt tag and whether or not the image is wrapped in a figure tag.
+                    Images that do not have 'alt' tags SHOULD add them, while the use of 'figure' tags is optional and only included for information.</p>
                     <table>
                         <thead>
                             <tr>
@@ -1007,7 +1059,7 @@ public class ConfluenceGenerator
                         <tbody>
                             {{{string.Join("\n            ", imgIssueRecords.Select(record =>
                                 $"<tr>" +
-                                $"<td><code>{record.Source}<code></td>" +
+                                $"<td><code>{record.Source}</code></td>" +
                                 $"<td>{(record.MissingAlt ? "Yes" : "No")}</td>" +
                                 $"<td>{(record.NotInFigure ? "Yes" : "No")}</td>" +
                                 $"</tr>"
@@ -1016,6 +1068,9 @@ public class ConfluenceGenerator
                     </table>
 
                     <h3>Possible Incomplete Markers Found on Page</h3>
+                    <p>The following table lists occurences of any markers that are often used when authors are making notes to complete content in the future.
+                    Note that this tooling cannot differentiate between "TO DO: [task]" and text such as "X is something you need to do". WGs should review
+                    any markers and ensure they are appropriate.</p>
                     <ul>
                         {{{string.Join(
                             "\n            ",
@@ -1023,6 +1078,8 @@ public class ConfluenceGenerator
                     </ul>
 
                     <h3>Reader Review Notes Found on Page</h3>
+                    <p>The following table lists occurences of any markers that are often used when requesting reader feedback or explicitly marking content that
+                    is expected to change. WGs need to review occurences to ensure any such tags are appropriate in a normative context.</p>
                     <ul>
                         {{{string.Join(
                             "\n            ",
@@ -1192,7 +1249,7 @@ public class ConfluenceGenerator
                                 $"<td>{artifact.WorkGroupComments}</td>" +
                                 $"</tr>"))}}}
                         </tbody>
-
+                    </table>
                 </ac:rich-text-body>
             </ac:structured-macro>
             """;
@@ -1237,6 +1294,11 @@ public class ConfluenceGenerator
             }
         }
     }
+
+    //private string getHtmlPageHeader()
+    //{
+
+    //}
 
 
     private void writeToFile(string filename, string content, string? dir = null)
